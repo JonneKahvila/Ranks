@@ -5,6 +5,7 @@ using Ranks.Players;
 using Ranks.Ranking;
 using SwiftlyS2.Shared;
 using SwiftlyS2.Shared.GameEventDefinitions;
+using SwiftlyS2.Shared.GameHooks;
 using SwiftlyS2.Shared.Players;
 
 namespace Ranks.Scoreboard;
@@ -15,11 +16,13 @@ namespace Ranks.Scoreboard;
 /// is never networked — the scoreboard keeps rendering the old one, and the bug looks exactly like
 /// a failed points calculation.
 /// <para>
-/// The clan tag and score follow events, but the rank triple is re-asserted every tick: CS2's
-/// scoreboard-refresh loop clears those controller fields between snapshots, so writing them only
-/// on change leaves the icon blank until the next rank change. The change detector in
-/// <see cref="WriteRankIcon"/> compares the live fields, so a steady state costs three reads and
-/// fires no notifier.
+/// The clan tag and score follow events, but the rank triple is re-asserted from
+/// <c>CCSPlayerController::ResourceDataThink</c>: CS2's scoreboard-refresh loop clears those
+/// controller fields between snapshots, so writing them only on change leaves the icon blank
+/// until the next rank change. That think is where the engine rebuilds the data the scoreboard
+/// reads, and it runs per controller on the engine's own schedule rather than once per tick.
+/// The change detector in <see cref="WriteRankIcon"/> compares the live fields, so a steady
+/// state costs three reads and fires no notifier.
 /// </para>
 /// </remarks>
 internal sealed class ScoreboardService : IDisposable
@@ -30,7 +33,7 @@ internal sealed class ScoreboardService : IDisposable
     private readonly PlayerRegistry _registry;
     private readonly ILogger _logger;
 
-    private bool _ticking;
+    private bool _hooked;
 
     public ScoreboardService(
         ISwiftlyCore core,
@@ -111,42 +114,54 @@ internal sealed class ScoreboardService : IDisposable
                 Apply(player);
     }
 
-    /// <summary>Starts the per-tick rank re-assert. Idempotent.</summary>
+    /// <summary>Starts the rank re-assert on the controller's resource-data think. Idempotent.</summary>
     public void Start()
     {
-        if (_ticking) return;
+        if (_hooked) return;
 
-        _core.Event.OnTick += ReassertRanks;
-        _ticking = true;
+        _core.GameHooks.Datamaps.CCSPlayerController.ResourceDataThink.Post += ReassertRank;
+        _hooked = true;
     }
 
     public void Dispose()
     {
-        if (!_ticking) return;
+        if (!_hooked) return;
 
-        _core.Event.OnTick -= ReassertRanks;
-        _ticking = false;
+        _core.GameHooks.Datamaps.CCSPlayerController.ResourceDataThink.Post -= ReassertRank;
+        _hooked = false;
     }
 
     /// <remarks>
     /// Deliberately only the rank triple — not the clan tag, and not the score. Score sync has no
-    /// change detector of its own, so running it here would fire ScoreUpdated 64 times a second.
+    /// change detector of its own, so running it here would fire ScoreUpdated on every think.
+    /// <para>
+    /// Post, not Pre: this think is what rebuilds the scoreboard's resource data, so a Pre write
+    /// is recomputed over before anything renders and the icon never appears.
+    /// </para>
     /// </remarks>
-    private void ReassertRanks()
+    private void ReassertRank(ref CCSPlayerControllerResourceDataThinkPostContext ctx)
     {
         var config = _config.Current;
 
         if (config.Scoreboard.RankMode == RankDisplayMode.Off) return;
 
-        foreach (var player in _core.PlayerManager.GetAllPlayers())
+        try
         {
-            if (player.IsFakeClient) continue;
+            var controller = ctx.SchemaObject;
+            if (controller is not { IsValid: true }) return;
+
+            var player = _core.PlayerManager.GetPlayerFromController(controller);
+            if (player is null || player.IsFakeClient) return;
 
             var record = _registry.BySlot(player.Slot);
-            if (record is null) continue;
+            if (record is null) return;
 
-            if (player.Controller is { IsValid: true } controller)
-                WriteRankIcon(config, controller, record, record.DisplayOverride?.Points ?? record.Points);
+            WriteRankIcon(config, controller, record, record.DisplayOverride?.Points ?? record.Points);
+        }
+        catch (Exception ex)
+        {
+            // A throw here would propagate into the engine's think.
+            _logger.LogWarning(ex, "Ranks: could not re-assert the scoreboard rank.");
         }
     }
 

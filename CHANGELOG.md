@@ -22,6 +22,11 @@ Notable changes to Ranks, newest first.
 
 ---
 
+## [1.0.3] - 2026-11-01
+
+- Use event-driven update frequency for Scoreboard rank instead of OnTick. This improves performance a lot.
+- Improved lazy player data loading
+
 ## [1.0.2] - 2026-10-30
 
 - Now everyone can see everyone's rank by default without any additional modules required.

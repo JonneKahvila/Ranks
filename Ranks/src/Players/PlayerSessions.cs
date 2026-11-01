@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Ranks.Api;
 using Ranks.Config;
@@ -14,6 +15,10 @@ namespace Ranks.Players;
 /// <summary>Owns when a record is loaded, when it is written, and when bulk work runs.</summary>
 internal sealed class PlayerSessions
 {
+    /// <remarks>10s total, which covers a slow Steam handshake without holding a slot forever.</remarks>
+    private const int AuthPollAttempts = 100;
+    private const int AuthPollIntervalMs = 100;
+
     private readonly ISwiftlyCore _core;
     private readonly ConfigHost<RanksConfig> _config;
     private readonly PlayerStore _store;
@@ -25,6 +30,10 @@ internal sealed class PlayerSessions
 
     private readonly Lock _saveGate = new();
     private Task<int>? _inFlightSave;
+
+    /// <remarks>Both triggers reach Track before either load publishes; without this the row is
+    /// read twice and PlayerDataLoaded is raised twice.</remarks>
+    private readonly ConcurrentDictionary<ulong, byte> _loading = new();
 
     /// <remarks>In memory by design: a pass always runs at cold start, so a persisted timestamp
     /// could only ever suppress a run that is already the default behaviour.</remarks>
@@ -59,6 +68,7 @@ internal sealed class PlayerSessions
     {
         _core.Event.OnClientSteamAuthorize += OnSteamAuthorized;
         _core.Event.OnClientSteamAuthorizeFail += OnSteamAuthorizeFailed;
+        _core.Event.OnClientPutInServer += OnPutInServer;
         _core.Event.OnClientDisconnected += OnDisconnected;
 
         StartSaveTimer();
@@ -72,6 +82,7 @@ internal sealed class PlayerSessions
     {
         _core.Event.OnClientSteamAuthorize -= OnSteamAuthorized;
         _core.Event.OnClientSteamAuthorizeFail -= OnSteamAuthorizeFailed;
+        _core.Event.OnClientPutInServer -= OnPutInServer;
         _core.Event.OnClientDisconnected -= OnDisconnected;
 
         _saveTimer?.Cancel();
@@ -93,12 +104,29 @@ internal sealed class PlayerSessions
         if (_core.PlayerManager.GetPlayer(e.PlayerId) is { } player) Track(player);
     }
 
+    /// <remarks>
+    /// The trigger every other plugin here uses as its primary: authorize alone leaves no trace
+    /// when it does not fire, and can land before GetPlayer resolves. Track is idempotent.
+    /// </remarks>
+    private void OnPutInServer(IOnClientPutInServerEvent e)
+    {
+        if (_core.PlayerManager.GetPlayer(e.PlayerId) is { } player) Track(player);
+    }
+
     private void Track(IPlayer player)
     {
         if (player.IsFakeClient) return;
 
         var steamId = player.SteamID;
         var slot = player.Slot;
+
+        // PutInServer commonly lands a few hundred ms before Steam auth finalizes.
+        if (steamId == 0)
+        {
+            PollForAuthorization(slot);
+            return;
+        }
+
         var name = SafeName(player);
 
         // Already resident: a reconnect adopts the record rather than reloading it, which is what
@@ -111,20 +139,57 @@ internal sealed class PlayerSessions
             return;
         }
 
+        if (!_loading.TryAdd(steamId, 0)) return;
+
         Task.Run(() =>
         {
             try
             {
                 var loaded = _store.Load(steamId) ?? NewRecord(steamId, name);
 
-                _core.Scheduler.NextTick(() => Publish(steamId, slot, name, loaded));
+                _core.Scheduler.NextTick(() =>
+                {
+                    try { Publish(steamId, slot, name, loaded); }
+                    finally { _loading.TryRemove(steamId, out _); }
+                });
             }
             catch (Exception ex)
             {
+                _loading.TryRemove(steamId, out _);
+
                 // Deliberately leaves the player untracked. Substituting an empty record would let
                 // the next absolute save wipe their real row (FR-DB-07).
                 _logger.LogError(ex, "Ranks: failed to load record for {SteamId}; the player stays untracked.", steamId);
             }
+        });
+    }
+
+    /// <remarks>Reads IPlayer on the game thread; doing it on the pool thread crashes the host.</remarks>
+    private void PollForAuthorization(int slot)
+    {
+        _ = Task.Run(async () =>
+        {
+            for (var attempt = 0; attempt < AuthPollAttempts; attempt++)
+            {
+                await Task.Delay(AuthPollIntervalMs).ConfigureAwait(false);
+
+                var settled = await _core.Scheduler.NextTickAsync(() =>
+                {
+                    var player = _core.PlayerManager.GetPlayer(slot);
+
+                    if (player is null || player.IsFakeClient) return true;
+                    if (player.SteamID == 0) return false;
+
+                    Track(player);
+                    return true;
+                }).ConfigureAwait(false);
+
+                if (settled) return;
+            }
+
+            _logger.LogWarning(
+                "Ranks: slot {Slot} never finished Steam authorization; that player is not tracked and earns nothing this session.",
+                slot);
         });
     }
 
