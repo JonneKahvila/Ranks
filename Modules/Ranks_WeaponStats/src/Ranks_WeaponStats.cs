@@ -15,7 +15,7 @@ namespace Ranks.WeaponStats;
 
 [PluginMetadata(
     Id = "Ranks_WeaponStats",
-    Version = "1.0.0",
+    Version = "1.0.1",
     Name = "Ranks WeaponStats",
     Author = "Shmitzas",
     Description = "Per-weapon and per-hitgroup statistics for the Ranks plugin.")]

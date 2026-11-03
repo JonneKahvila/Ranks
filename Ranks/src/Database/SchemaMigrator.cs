@@ -1,7 +1,6 @@
 using System.Data;
 using System.Data.Common;
 using System.Reflection;
-using FluentMigrator;
 using FluentMigrator.Runner;
 using FluentMigrator.Runner.Processors;
 using Microsoft.Extensions.DependencyInjection;
@@ -51,8 +50,11 @@ internal sealed class SchemaMigrator
     }
 
     /// <summary>Migrates core's own schema. Throws — the caller decides what a failure means.</summary>
-    public void MigrateCore() =>
+    public void MigrateCore()
+    {
+        WarnOnExportedMigrator();
         Run(typeof(SchemaMigrator).Assembly, _tables.CoreLedger, "Ranks");
+    }
 
     /// <summary>Migrates every queued module, isolating each failure.</summary>
     /// <remarks>
@@ -65,9 +67,11 @@ internal sealed class SchemaMigrator
 
         foreach (var (assembly, pluginId) in _pending.ToArray())
         {
+            var context = new ModuleMigrationContext(assembly);
+
             try
             {
-                Run(assembly, _tables.LedgerFor(pluginId), pluginId);
+                Run(context.LoadModule(LocateModule(assembly, pluginId)), _tables.LedgerFor(pluginId), pluginId);
             }
             catch (Exception ex)
             {
@@ -75,6 +79,7 @@ internal sealed class SchemaMigrator
             }
             finally
             {
+                context.Unload();
                 _migrated.Add((assembly, pluginId));
             }
         }
@@ -84,8 +89,6 @@ internal sealed class SchemaMigrator
 
     private void Run(Assembly assembly, string ledger, string pluginId)
     {
-        WarnOnSplitMigratorIdentity(assembly, pluginId);
-
         var before = ListTables();
 
         var services = new ServiceCollection()
@@ -118,32 +121,49 @@ internal sealed class SchemaMigrator
         VerifyAffixes(before, pluginId);
     }
 
+    /// <summary>The module's assembly file, which <see cref="ModuleMigrationContext"/> loads a second time.</summary>
     /// <remarks>
-    /// ScanIn().For.Migrations() matches on core's IMigration, so a module that resolved its own
-    /// FluentMigrator contributes zero migrations and MigrateUp() reports success over a schema it
-    /// never created. Attributes are compared by name because the whole failure is that the two
-    /// Types are not equal. Fix is packaging, not code: the module must reference FluentMigrator
-    /// with ExcludeAssets="runtime" and take core's exported copy.
+    /// SwiftlyS2 loads plugins from memory, so Location is empty. Its plugin manager matches a
+    /// metadata id or a folder name, and a module's folder is named after its assembly.
     /// </remarks>
-    private void WarnOnSplitMigratorIdentity(Assembly assembly, string pluginId)
+    private string LocateModule(Assembly assembly, string pluginId)
     {
-        Type[] types;
+        if (!string.IsNullOrEmpty(assembly.Location)) return assembly.Location;
 
-        try { types = assembly.GetTypes(); }
-        catch (ReflectionTypeLoadException ex) { types = [.. ex.Types.OfType<Type>()]; }
+        var name = assembly.GetName().Name!;
 
-        if (types.Any(t => typeof(IMigration).IsAssignableFrom(t) && t is { IsClass: true, IsAbstract: false })) return;
+        foreach (var id in new[] { pluginId, name })
+        {
+            if (_core.PluginManager.GetPluginPath(id) is not { } directory) continue;
 
-        var declared = types.Count(t => t.GetCustomAttributesData()
-            .Any(a => a.AttributeType.FullName == "FluentMigrator.MigrationAttribute"));
+            var path = Path.Combine(directory, $"{name}.dll");
+            if (File.Exists(path)) return path;
+        }
 
-        if (declared == 0) return;
+        throw new FileNotFoundException($"Ranks: cannot find {name}.dll for module {pluginId}.", $"{name}.dll");
+    }
+
+    /// <remarks>
+    /// Older releases exported FluentMigrator, and unzipping an update over one leaves the files
+    /// behind. SwiftlyS2 forces every export onto every plugin, so they keep breaking other plugins'
+    /// migrations while Ranks itself runs fine.
+    /// </remarks>
+    private void WarnOnExportedMigrator()
+    {
+        string[] stale;
+
+        try { stale = Directory.GetFiles(Path.Combine(_core.PluginPath, "resources", "exports"), "FluentMigrator*.dll"); }
+        catch (IOException) { return; }
+        catch (UnauthorizedAccessException) { return; }
+
+        if (stale.Length == 0) return;
 
         _logger.LogError(
-            "Ranks: module {PluginId} declares {Count} migration(s) that core cannot see. Its " +
-            "FluentMigrator is a second copy, so no table will be created. Ship the module with " +
-            "FluentMigrator ExcludeAssets=\"runtime\" and let it bind to Ranks/resources/exports.",
-            pluginId, declared);
+            "Ranks: delete {Files} from Ranks/resources/exports and restart the server. SwiftlyS2 " +
+            "forces exported assemblies onto every plugin, so these replace the FluentMigrator other " +
+            "plugins ship and break their migrations (VIPCore: \"Method 'get_Quoter' ... does not have " +
+            "an implementation\").",
+            string.Join(", ", stale.Select(Path.GetFileName)));
     }
 
     /// <summary>The named connection's string, with SwiftlyS2's MySQL timeout key corrected.</summary>

@@ -75,6 +75,7 @@ otherwise you cannot tell the fix from a warm-cache effect.
 
 - [ ] Version bumped in `[PluginMetadata]` **and** `.csproj`
 - [ ] `Ranks.Contract.dll` present in the publish output
+- [ ] No `FluentMigrator*.dll` in any `resources/exports/` of the publish output
 - [ ] `en.jsonc` complete; contributed translations key-complete or omitted
 - [ ] Migrations verified on MySQL, PostgreSQL and SQLite — fresh and existing
 - [ ] Breaking contract change → key bumped to `.v2`, `.v1` still registered

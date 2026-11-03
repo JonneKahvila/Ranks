@@ -1265,8 +1265,8 @@ config and commands, and must degrade to a no-op (with one warning at
 `OnAllPluginsLoaded`) when `Ranks` is absent.
 
 **The storage contract, in full:** share core's connection, own everything
-inside it. A module names its tables through `ResolveTableName`, runs its own
-FluentMigrator runner over its own assembly, and records applied state in its
+inside it. A module names its tables through `ResolveTableName`, hands its
+migrations to core's runner, and records applied state in its
 own ledger, derived by core from its plugin id (FR-API-06). It never writes a core
 table, never adds a column to one, and never touches core's ledger. A module
 that stores nothing carries no database code at all.

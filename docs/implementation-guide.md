@@ -578,6 +578,13 @@ Core's own schema migrates in `Load`. Registered module assemblies migrate in
 `OnAllPluginsLoaded`, because that is the first point at which the handshake has
 delivered the API and every module has had a chance to register.
 
+A module assembly is **not** scanned as loaded: the module ships its own
+FluentMigrator, so its migrations implement an `IMigration` core's runner does not
+match. `ModuleMigrationContext` loads the module DLL a second time with
+`FluentMigrator*` bound to core's copy; core migrates that and unloads it. Why
+FluentMigrator cannot simply be exported instead:
+`.github/instructions/database.instructions.md`.
+
 **Each module is migrated inside its own `try`/`catch`** (FR-DB-05 req. 9). Core
 has taken on running third-party code; an unhandled throw from one module's
 migration would otherwise take core's schema and every other module down with
@@ -1483,6 +1490,10 @@ flag the handshake does not reset.
 - Same connection (`ConnectionName`), own tables, own ledger — but **core runs
   the migrations**. Call `RegisterMigrations(assembly)` from the handshake, not
   from `Load`, where there is no API yet.
+- Reference FluentMigrator as a plain `PackageReference` so it ships beside your
+  DLL. `ExcludeAssets="runtime"` leaves the module unable to load, and
+  `PrivateAssets="all"` silently drops the package from publish. Never copy it to
+  `resources/exports`.
 - Runtime query names come from `ResolveTableName` — never string concatenation.
   Table names *inside migrations* are rewritten by core, so write the base name
   and let it apply the affixes. **The base name carries the `ranks_` namespace**
@@ -1644,6 +1655,8 @@ Before tagging:
 
 - [ ] `Ranks.Contract.dll` is physically present in `resources/exports/` in a
       **clean** checkout build
+- [ ] No `FluentMigrator*.dll` in any `resources/exports/` — SwiftlyS2 forces
+      exports onto every plugin
 - [ ] The resolved `SwiftlyS2.CS2` version is recorded in the release notes —
       the reference floats (`*-*`), so nothing else ties a bug report to a
       framework build

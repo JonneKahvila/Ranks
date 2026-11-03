@@ -273,7 +273,10 @@ tick can still be too early.
 > `ExcludeAssets="runtime" PrivateAssets="all"` — the host already provides them,
 > and shipping a second copy produces duplicate type identities. The
 > FluentMigrator packages are the opposite case: nothing provides them, so they
-> must ship normally.
+> must ship normally — beside the DLL, never in `resources/exports`, and without
+> `PrivateAssets` (which silently drops them from publish). Modules ship their own
+> copy too; why, and how core still runs their migrations, is in
+> `instructions/database.instructions.md`.
 
 ---
 

@@ -14,6 +14,11 @@ Notable changes to Ranks_CustomCombos, newest first.
 
      See .github/instructions/changelog.instructions.md for the full style. -->
 
+## [1.0.1] - 2026-11-03
+
+- Required by Ranks 1.0.4 and newer, which no longer loads 1.0.0 of this module. This version
+  also works with older Ranks.
+
 ## [1.0.0] - 2026-10-26
 
 First release. Operator-defined kill combinations, awarded on top of core's flat catalogue

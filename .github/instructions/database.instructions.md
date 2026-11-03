@@ -138,6 +138,17 @@ contradiction: a module's `Load()` runs before the handshake, so it never had an
 schema in `Load()` and registered module assemblies in `OnAllPluginsLoaded()`,
 each inside its own try/catch so one bad module cannot take the schema down.
 
+Core never scans the module assembly it was handed. A module ships its own
+FluentMigrator — SwiftlyS2's load-time `GetTypes()` resolves its `Migration`
+subclasses before core is involved — and that copy's `IMigration` is not the one
+core's runner matches. `ModuleMigrationContext` loads the module's DLL a second
+time with every `FluentMigrator*` reference bound to core's copy, and core
+migrates that. **Never put FluentMigrator in `resources/exports`**: SwiftlyS2
+forces every export onto every plugin, replacing the version each one ships —
+VIPCore 6.2 then fails with `Method 'get_Quoter' … does not have an implementation`.
+Private copies cannot leak that way, in either load order: SwiftlyS2's context
+cannot adopt an assembly from a plugin's collectible context.
+
 The official `SwiftlyS2-Plugins/Admins` shares one stock `VersionInfo` across
 three modules and gets away with it only by hand-coordinating migration IDs into
 one sequence across three folders. A colliding third-party ID is then recorded

@@ -24,6 +24,9 @@
 
     <!-- Shipped normally, unlike the references above: SwiftlyS2 does not provide FluentMigrator,
          so ExcludeAssets="runtime" would compile and then fail to resolve at load.
+         Never copy any of it to resources/exports: SwiftlyS2 forces every export onto every plugin,
+         replacing the FluentMigrator they ship (VIPCore fails with "get_Quoter ... does not have an
+         implementation"). Modules reach core's copy through ModuleMigrationContext instead.
          Runner.Core, not the FluentMigrator.Runner meta-package — that one drags in runners for
          SqlServer, Oracle, Db2, Firebird, Hana, Redshift and Snowflake, and with them a
          Microsoft.Data.SqlClient chain carrying a high-severity Pkcs advisory (NU1903). -->
@@ -105,38 +108,6 @@
     <Error Condition="!Exists('$(_ContractDll)')"
            Text="CopyContractToPublish: $(_ContractDll) is missing. Build Ranks.Contract first." />
     <Copy SourceFiles="$(_ContractDll)" DestinationFolder="$(PublishDir)resources/exports" SkipUnchangedFiles="true" />
-  </Target>
-
-  <ItemGroup>
-    <!-- Shipped from resources/exports, not just beside Ranks.dll. Each plugin gets its own load
-         context, and SwiftlyS2 shares exactly one thing between them: it loads every
-         resources/exports/*.dll into the default context and hands those types to every plugin
-         loader with PreferSharedTypes. A module's Migration subclasses need these two types, so
-         without this they either fail to load outright or resolve a private copy -
-         ScanIn().For.Migrations() then compares against a different IMigration and finds nothing.
-         Abstractions carries IMigration/MigrationAttribute, FluentMigrator.dll the Migration base;
-         sharing one without the other still splits the identity. The Runner.* assemblies stay
-         private - no module names them. -->
-    <SharedExportAssembly Include="FluentMigrator.dll" />
-    <SharedExportAssembly Include="FluentMigrator.Abstractions.dll" />
-  </ItemGroup>
-
-  <Target Name="CopySharedExports" AfterTargets="Build">
-    <ItemGroup>
-      <_SharedExportBuild Include="@(SharedExportAssembly->'$(OutDir)%(Identity)')" />
-    </ItemGroup>
-    <Error Condition="!Exists('%(_SharedExportBuild.FullPath)')"
-           Text="CopySharedExports: %(_SharedExportBuild.FullPath) is missing." />
-    <Copy SourceFiles="@(_SharedExportBuild)" DestinationFolder="$(OutDir)resources/exports" SkipUnchangedFiles="true" />
-  </Target>
-
-  <Target Name="CopySharedExportsToPublish" AfterTargets="Publish">
-    <ItemGroup>
-      <_SharedExportPublish Include="@(SharedExportAssembly->'$(PublishDir)%(Identity)')" />
-    </ItemGroup>
-    <Error Condition="!Exists('%(_SharedExportPublish.FullPath)')"
-           Text="CopySharedExportsToPublish: %(_SharedExportPublish.FullPath) is missing." />
-    <Copy SourceFiles="@(_SharedExportPublish)" DestinationFolder="$(PublishDir)resources/exports" SkipUnchangedFiles="true" />
   </Target>
 
   <Target Name="CreateZip" AfterTargets="Publish">

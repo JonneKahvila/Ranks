@@ -17,11 +17,12 @@
     <PackageReference Include="Microsoft.Extensions.Logging" Version="10.*" ExcludeAssets="runtime" PrivateAssets="all" />
     <PackageReference Include="SwiftlyS2.CS2" Version="*-*" ExcludeAssets="runtime" PrivateAssets="all" />
 
-    <!-- Compile-only, and the runtime copy has to come from core: SwiftlyS2 shares an assembly
-         across plugin load contexts only by loading it from some plugin's resources/exports, which
-         Ranks does for FluentMigrator. A private copy here would split the Type identity, and
-         core's ScanIn().For.Migrations() would then match none of these migrations. -->
-    <PackageReference Include="FluentMigrator" Version="8.*" ExcludeAssets="runtime" PrivateAssets="all" />
+    <!-- Shipped privately so SwiftlyS2 can load this module: its GetTypes() resolves these
+         migrations' base type before core is involved. Core never runs this copy; it reloads this
+         DLL with FluentMigrator bound to its own (ModuleMigrationContext). Never export it -
+         SwiftlyS2 forces every export onto every plugin, replacing the version they ship. No
+         PrivateAssets either: it drops the package from publish, and the module then cannot load. -->
+    <PackageReference Include="FluentMigrator" Version="8.*" />
   </ItemGroup>
 
   <ItemGroup>

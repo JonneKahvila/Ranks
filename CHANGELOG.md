@@ -22,6 +22,19 @@ Notable changes to Ranks, newest first.
 
 ---
 
+## [1.0.4] - 2026-11-03
+
+Update if another plugin on the server uses FluentMigrator, such as VIPCore. Update every
+Ranks module at the same time.
+
+- Ranks no longer breaks other plugins' database migrations. With Ranks installed, VIPCore
+  failed at startup with `Method 'get_Quoter' ... does not have an implementation`.
+- After installing, delete `FluentMigrator.dll` and `FluentMigrator.Abstractions.dll` from
+  `Ranks/resources/exports/` and restart. Unzipping over an older Ranks leaves them behind,
+  and Ranks logs an error at startup until they are gone.
+- `Ranks_WeaponStats`, `Ranks_EloPoints` and `Ranks_CustomCombos` older than 1.0.1 no longer
+  load with this version.
+
 ## [1.0.3] - 2026-11-01
 
 - Use event-driven update frequency for Scoreboard rank instead of OnTick. This improves performance a lot.
