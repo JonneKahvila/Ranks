@@ -14,12 +14,11 @@ Notable changes to Ranks_CustomCombos, newest first.
 
      See .github/instructions/changelog.instructions.md for the full style. -->
 
-## [1.0.1] - 2026-11-03
+## [1.0.1] - 2026-11-04
 
-- Required by Ranks 1.0.4 and newer, which no longer loads 1.0.0 of this module. This version
-  also works with older Ranks.
-- Combos no longer count, or take `first_blood`, on kills Ranks gives no points for. Below
-  `Rank.MinPlayers` they used to. This holds with older Ranks versions too.
+- Required by Ranks 1.0.4, which no longer loads 1.0.0 of this module.
+- Combos no longer count, or take `first_blood`, on kills Ranks gives no points for, such as
+  below `Rank.MinPlayers`.
 
 ## [1.0.0] - 2026-10-26
 
