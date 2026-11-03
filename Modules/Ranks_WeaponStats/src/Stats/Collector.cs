@@ -37,10 +37,18 @@ internal sealed class Collector
     /// </remarks>
     public volatile bool BotsEnabled;
 
-    public Collector(ISwiftlyCore core, WeaponStatsConfig config, ILogger logger)
+    /// <summary>Core's play gate — <c>MinPlayers</c>, warmup and bots-only teams — asked per event.</summary>
+    /// <remarks>
+    /// A delegate so this class names no contract type. Asked rather than polled like
+    /// <see cref="BotsEnabled"/>: polling would lag core, which decides it once per tick.
+    /// </remarks>
+    private readonly Func<bool> _isPlayCounted;
+
+    public Collector(ISwiftlyCore core, WeaponStatsConfig config, Func<bool> isPlayCounted, ILogger logger)
     {
         _core = core;
         _config = config;
+        _isPlayCounted = isPlayCounted;
         _logger = logger;
     }
 
@@ -99,7 +107,7 @@ internal sealed class Collector
     [GameEventHandler(HookMode.Post)]
     public HookResult OnWeaponFire(EventWeaponFire e)
     {
-        // No guards at all: there is no victim to test, so neither core's bot policy nor the
+        // No victim guards: there is no victim to test, so neither core's bot policy nor the
         // friendly-fire rule has anything to say about a shot.
         if (Session(e.UserIdPlayer) is not { } stats) return HookResult.Continue;
 
@@ -109,6 +117,11 @@ internal sealed class Collector
         // is per weapon rather than per player so that a grenade, whose damage lands seconds later
         // and long after the next rifle shot, still resolves against its own trigger pull.
         counters.ResolvePendingShot();
+
+        // Only a counted shot is latched, matching core, so one fired below the gate never later
+        // becomes a miss.
+        if (!_isPlayCounted()) return HookResult.Continue;
+
         counters.PendingShot = true;
         counters.Shots++;
 
@@ -126,11 +139,12 @@ internal sealed class Collector
 
         var counters = stats.For(WeaponNames.Normalize(e.Weapon));
 
-        // Cleared ahead of both guards: a bullet that struck a teammate, or a bot on a server with
+        // Cleared ahead of the guards: a bullet that struck a teammate, or a bot on a server with
         // BotsEnabled off, landed. That is a hit which goes uncounted, not a miss — clearing
         // after the guards would score every such shot as missed.
         counters.PendingShot = false;
 
+        if (!_isPlayCounted()) return HookResult.Continue;
         if (IsExcluded(config.Tracking, attacker, victim)) return HookResult.Continue;
         if (!CountsAgainst(victim)) return HookResult.Continue;
 
@@ -158,6 +172,8 @@ internal sealed class Collector
     [GameEventHandler(HookMode.Post)]
     public HookResult OnPlayerDeath(EventPlayerDeath e)
     {
+        if (!_isPlayCounted()) return HookResult.Continue;
+
         // Read once at the top: a reload landing between the kill half and the death half would
         // otherwise mix old and new settings within a single event.
         var config = _config;

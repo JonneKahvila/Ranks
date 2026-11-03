@@ -53,9 +53,10 @@ internal sealed class ScoringHandlers
         var victimIsBot = IsBot(e.UserIdPlayer);
         var attackerIsBot = IsBot(e.AttackerPlayer);
 
-        // Warmup and bot involvement disregard the event entirely — no counters, no killstreak, no
-        // arbiter claim. Returning here rather than per-award is what keeps a streak from being
-        // built on bots, which AwardKillstreak cannot gate on because it has no counterparty.
+        // Uncounted play (MinPlayers, warmup, a team of only bots) and bot involvement disregard the
+        // event entirely — no counters, no killstreak, no arbiter claim. Returning here rather than
+        // per-award is what keeps a streak from being built on bots, which AwardKillstreak cannot
+        // gate on because it has no counterparty.
         if (!_awards.ShouldRecordDeath(victimIsBot, attackerIsBot)) return HookResult.Continue;
 
         var victim = Record(e.UserIdPlayer);
@@ -97,7 +98,8 @@ internal sealed class ScoringHandlers
     /// <remarks>
     /// The previous shot never reached OnPlayerHurt, so it damaged nobody. Misses cannot be derived
     /// as shots minus hits: one shotgun blast is a single trigger pull that lands up to nine hits,
-    /// so that subtraction goes negative.
+    /// so that subtraction goes negative. Only a shot fired while play counts is latched, so one
+    /// fired below MinPlayers never surfaces as a miss once the gate opens.
     /// </remarks>
     [GameEventHandler(HookMode.Post)]
     public HookResult OnWeaponFire(EventWeaponFire e)
@@ -106,16 +108,11 @@ internal sealed class ScoringHandlers
 
         if (record.PendingShot)
         {
-            record.PendingShot = false;
-
-            if (_awards.ShouldRecordShot())
-            {
-                record.Misses++;
-                record.Dirty = true;
-            }
+            record.Misses++;
+            record.Dirty = true;
         }
 
-        record.PendingShot = true;
+        record.PendingShot = _awards.IsPlayCounted;
 
         return HookResult.Continue;
     }
@@ -143,6 +140,10 @@ internal sealed class ScoringHandlers
     {
         var winner = e.Winner;
 
+        // A round neither side won is nobody's loss; without the side check a draw booked one for
+        // every player on both teams.
+        var counted = winner is 2 or 3 && _awards.IsPlayCounted;
+
         foreach (var player in _core.PlayerManager.GetAllPlayers())
         {
             var record = Record(player);
@@ -151,18 +152,21 @@ internal sealed class ScoringHandlers
             var team = TeamOf(player);
             if (team is not (2 or 3)) continue;
 
-            if (team == winner)
+            if (counted)
             {
-                record.RoundWins++;
-                _awards.Award(record, PointEvents.RoundWin);
-            }
-            else
-            {
-                record.RoundLosses++;
-                _awards.Award(record, PointEvents.RoundLose);
-            }
+                if (team == winner)
+                {
+                    record.RoundWins++;
+                    _awards.Award(record, PointEvents.RoundWin);
+                }
+                else
+                {
+                    record.RoundLosses++;
+                    _awards.Award(record, PointEvents.RoundLose);
+                }
 
-            record.Dirty = true;
+                record.Dirty = true;
+            }
 
             if (_config.Current.Points.KillstreakResetOnRoundEnd) record.Killstreak = 0;
         }
@@ -191,6 +195,8 @@ internal sealed class ScoringHandlers
     [GameEventHandler(HookMode.Post)]
     public HookResult OnMatchEnd(EventCsWinPanelMatch e)
     {
+        if (!_awards.IsPlayCounted) return HookResult.Continue;
+
         try
         {
             var teams = _core.EntitySystem.GetAllEntitiesByClass<CCSTeam>()
@@ -234,7 +240,7 @@ internal sealed class ScoringHandlers
     [GameEventHandler(HookMode.Post)]
     public HookResult OnBombPlanted(EventBombPlanted e)
     {
-        if (Record(e.UserIdPlayer) is not { } record) return HookResult.Continue;
+        if (!_awards.IsPlayCounted || Record(e.UserIdPlayer) is not { } record) return HookResult.Continue;
 
         record.BombsPlanted++;
         record.Dirty = true;
@@ -246,7 +252,7 @@ internal sealed class ScoringHandlers
     [GameEventHandler(HookMode.Post)]
     public HookResult OnBombDefused(EventBombDefused e)
     {
-        if (Record(e.UserIdPlayer) is not { } record) return HookResult.Continue;
+        if (!_awards.IsPlayCounted || Record(e.UserIdPlayer) is not { } record) return HookResult.Continue;
 
         record.BombsDefused++;
         record.Dirty = true;

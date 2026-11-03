@@ -40,6 +40,7 @@ internal sealed class RanksBridge
 
     private ComboMatcher _matcher;
     private bool _suppress;
+    private bool _playGateUnsupported;
 
     public RanksBridge(ISwiftlyCore core, Writer writer, ComboCounters counters, ComboMenus menus, ComboMatcher matcher, bool suppress, ILogger logger)
     {
@@ -136,7 +137,7 @@ internal sealed class RanksBridge
         // Constructed here rather than in the plugin's Load: ComboArbiter implements a contract
         // interface, so merely naming it outside an isolated method would resolve Ranks.Contract
         // on a server that has no Ranks installed.
-        _arbiter ??= new ComboArbiter(_core, _matcher, _suppress, _counters, _logger);
+        _arbiter ??= new ComboArbiter(_core, _matcher, _suppress, _counters, PlayCounted, _logger);
 
         ((CustomCombosModule)_module).Register();
         ((CustomCombosModule)_module).HandOverMigrations(typeof(RanksBridge).Assembly);
@@ -144,6 +145,39 @@ internal sealed class RanksBridge
         // Registering the arbiter is what makes core consult us before it awards a kill.
         api.SetKillArbiter((ComboArbiter)_arbiter);
     }
+
+    /// <summary>Core's play gate, asked by the arbiter before it counts anything.</summary>
+    /// <remarks>
+    /// A Ranks older than the member fails the read at JIT and lands in the catch; its points gate
+    /// is then the stand-in, which is the same answer whenever that core is scoring.
+    /// </remarks>
+    private bool PlayCounted()
+    {
+        if (_api is null) return false;
+
+        if (!_playGateUnsupported)
+        {
+            try
+            {
+                return ReadPlayGate();
+            }
+            catch (MissingMethodException)
+            {
+                _playGateUnsupported = true;
+                _logger.LogWarning(
+                    "Ranks_CustomCombos: this Ranks version cannot report its play gate, so combos count only " +
+                    "while it awards points. Update Ranks to 1.0.4 or newer.");
+            }
+        }
+
+        return ReadPointsGate();
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private bool ReadPlayGate() => _api is IRanksApi api && api.IsPlayCounted;
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private bool ReadPointsGate() => _api is IRanksApi api && api.ArePointsEnabled;
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     public void Unwire()
@@ -202,6 +236,7 @@ internal sealed class ComboArbiter : IRanksKillArbiter
 {
     private readonly ISwiftlyCore _core;
     private readonly ComboCounters _counters;
+    private readonly Func<bool> _isPlayCounted;
     private readonly ILogger _logger;
 
     // Same-tick runs, keyed by attacker then combo. Cleared on the next tick rather than compared
@@ -216,12 +251,13 @@ internal sealed class ComboArbiter : IRanksKillArbiter
     private bool _countBots;
     private bool _firstBloodTaken;
 
-    public ComboArbiter(ISwiftlyCore core, ComboMatcher matcher, bool suppress, ComboCounters counters, ILogger logger)
+    public ComboArbiter(ISwiftlyCore core, ComboMatcher matcher, bool suppress, ComboCounters counters, Func<bool> isPlayCounted, ILogger logger)
     {
         _core = core;
         _matcher = matcher;
         _suppress = suppress;
         _counters = counters;
+        _isPlayCounted = isPlayCounted;
         _logger = logger;
     }
 
@@ -241,6 +277,10 @@ internal sealed class ComboArbiter : IRanksKillArbiter
     {
         try
         {
+            // Core consults the arbiter only for counted play; an older one asked below MinPlayers
+            // too, where a combo, or first blood, would be a stat the points refused (FR-PTS-03).
+            if (!_isPlayCounted()) return null;
+
             var firstBlood = !_firstBloodTaken;
 
             var facts = new KillFacts(
@@ -260,10 +300,9 @@ internal sealed class ComboArbiter : IRanksKillArbiter
             var rule = _matcher.Select(facts, r => Bump(context.AttackerSteamId, r.Key));
             if (rule is null) return null;
 
-            // Counted here rather than after the award: a context gate refusing the points does not
-            // unmake the combo, and counters are facts (FR-PTS-03). Core now drops bot and warmup
-            // deaths before the arbiter is reached, so this guard is only load-bearing against an
-            // older core that still called it for bot kills.
+            // Counted before the award: a cancelled award or core scoring being off does not unmake
+            // the combo, and every gate has been passed by now. The bot guard is only load-bearing
+            // against an older core that still called this for bot kills.
             if (_countBots || !context.VictimIsBot)
                 _counters.Record(context.AttackerSteamId, rule.Key);
 

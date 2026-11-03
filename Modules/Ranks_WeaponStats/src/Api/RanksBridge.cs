@@ -123,6 +123,15 @@ internal sealed class RanksBridge
     /// <summary>Core's bot policy, null when core is absent or not ready.</summary>
     [MethodImpl(MethodImplOptions.NoInlining)]
     public bool? BotsEnabled() => _api is IRanksApi api ? api.GetPointSettings().BotsEnabled : null;
+
+    /// <summary>Core's play gate, null when core is absent or not ready.</summary>
+    /// <remarks>Throws MissingMethodException against a Ranks older than the member; the plugin catches it.</remarks>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public bool? IsPlayCounted() => _api is IRanksApi api ? api.IsPlayCounted : null;
+
+    /// <summary>Core's points gate, the fallback for a Ranks that cannot report its play gate.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public bool? ArePointsEnabled() => _api is IRanksApi api ? api.ArePointsEnabled : null;
 }
 
 /// <summary>This module's hook into core's lifecycle.</summary>

@@ -18,6 +18,15 @@ Notable changes to Ranks_EloPoints, newest first.
 
 - Required by Ranks 1.0.4 and newer, which no longer loads 1.0.0 of this module. This version
   also works with older Ranks.
+- A rating now moves on exactly the rounds Ranks counted in its statistics. Rounds played below
+  `Rank.MinPlayers`, in warmup with `Rank.WarmupPoints` off, or against a team made up only of
+  bots with `Rank.BotsEnabled` off are not rated.
+- `Rank.MinPlayers` now counts the humans connected during each round, as Ranks does, instead
+  of everyone who played at any point in the match. A match is no longer rated when the server
+  never held that many players at once, or left unrated while Ranks kept its statistics.
+- A drawn round no longer counts as a lost round for everyone.
+- This needs Ranks 1.0.4. With an older Ranks the module rates as before, and the log says so
+  once.
 
 ## [1.0.0] - 2026-10-26
 

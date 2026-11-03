@@ -24,8 +24,9 @@ Notable changes to Ranks, newest first.
 
 ## [1.0.4] - 2026-11-03
 
-Update if another plugin on the server uses FluentMigrator, such as VIPCore. Update every
-Ranks module at the same time.
+Update if another plugin on the server uses FluentMigrator, such as VIPCore, or if stats
+were still being recorded below `Rank.MinPlayers`. Update every Ranks module at the same
+time.
 
 - Ranks no longer breaks other plugins' database migrations. With Ranks installed, VIPCore
   failed at startup with `Method 'get_Quoter' ... does not have an implementation`.
@@ -34,6 +35,18 @@ Ranks module at the same time.
   and Ranks logs an error at startup until they are gone.
 - `Ranks_WeaponStats`, `Ranks_EloPoints` and `Ranks_CustomCombos` older than 1.0.1 no longer
   load with this version.
+- With fewer humans than `Rank.MinPlayers`, statistics now stop along with points. Kills,
+  deaths, assists, headshots, hits and misses, round and match results, bomb plants and
+  defuses, and `Ranks_CustomCombos` combo counts all kept counting before.
+- A killstreak started below `Rank.MinPlayers` no longer pays out once the server fills.
+- During warmup with `Rank.WarmupPoints` off, round and match results and bomb plants and
+  defuses are no longer recorded. Kills, deaths and accuracy already stopped.
+- A drawn round no longer counts as a lost round for everyone, and no longer costs both
+  teams the `round_lose` points.
+- With `Rank.BotsEnabled` off, nothing counts while a team is made up only of bots. Round
+  and match results, bomb plants and defuses, and accuracy no longer count or pay against
+  an all-bot team; kills and hits on bots already did not. `Rank.FfaMode` servers are
+  unaffected.
 
 ## [1.0.3] - 2026-11-01
 

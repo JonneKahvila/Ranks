@@ -248,14 +248,15 @@ operator's typo would look like working software.
 
 ### 3.1 Settings read from core, not configured here
 
-`StartPoints`, `MinPoints`, `MinPlayers`, `WarmupPoints` and `BotsEnabled`
-come from `GetPointSettings()` on every match settle, never cached at load —
-`GetPointSettings` returns a fresh snapshot per call precisely so it tracks live
-reloads (FR-API-05).
+`StartPoints` and `MinPoints` come from `GetPointSettings()` on every match settle,
+never cached at load — `GetPointSettings` returns a fresh snapshot per call precisely
+so it tracks live reloads (FR-API-05). `MinPlayers`, `WarmupPoints` and `BotsEnabled`
+reach the rating through core's play gate instead (§5.2), which core applies to its
+statistics in every mode; the snapshot copies are read only against a Ranks older than
+1.0.4, which has no gate to ask.
 
-This is FR-MOD-05 rule 3: core applies none of them with `UseCoreRankingLogic`
-off, but they are the operator's stated intent and asking them to set the same
-thing twice is how the two copies drift.
+This is FR-MOD-05 rules 3 and 7: the operator states each intent once, in core, and the
+rating moves on exactly the play core's statistics count.
 
 ---
 
@@ -398,7 +399,7 @@ count.
 | Boundary | Signal |
 |---|---|
 | match start | first live round after `Phase` leaves `GAMEPHASE_WARMUP_ROUND`, or `ActualRoundsPlayed` moving backwards |
-| round end | `EventRoundEnd`, filtered by phase |
+| round end | `EventRoundEnd`, filtered by core's play gate |
 | match end | `EventCsWinPanelMatch`, **or** `Phase == GAMEPHASE_MATCH_ENDED` |
 | abandoned | `OnMapUnload`, or `Unload`, with a match still open |
 
@@ -407,9 +408,17 @@ is a backstop, and settling is idempotent per match so firing both is harmless.
 The failure it guards is that *nothing is ever written for any match*, which is
 the one outcome that must not be silent.
 
-Warmup rounds are filtered on `Phase == GAMEPHASE_WARMUP_ROUND` and gated by
-core's `Rank.WarmupPoints`. The phase is a direct signal, so this does not
-depend on inferring warmup from the round counter.
+A round is rated only when core counted it (FR-PTS-03). `OnRoundEnd` asks core's
+`IsPlayCounted` inside the same dispatch; core decides it once per tick, so the answer
+is the one core used for its own round result, and it covers `Rank.MinPlayers`,
+warmup and a team made up only of bots at once. A draw is skipped without asking, as
+core skips it. Adding a gate of its own here would rate play core's statistics left
+out, or leave unrated play they kept.
+
+Against a Ranks older than 1.0.4 the call fails at JIT and the module falls back to its
+own rules: warmup rounds are filtered on `Phase == GAMEPHASE_WARMUP_ROUND` and gated by
+core's `Rank.WarmupPoints`, and settling applies the match-level `MinPlayers` and
+no-rated-humans checks.
 
 ### 5.3 Restart detection
 
@@ -500,8 +509,11 @@ the next match instead.
 public HookResult OnRoundEnd(EventRoundEnd e)
 {
     if (!TryReadMatch(out var m)) return HookResult.Continue;
-    if (m.Phase == GamePhase.GAMEPHASE_WARMUP_ROUND && !_core.WarmupPoints) return HookResult.Continue;
     if (m.RoundsPlayed < _lastRoundsPlayed) { DiscardMatch("restart"); return HookResult.Continue; }
+    _lastRoundsPlayed = m.RoundsPlayed;
+
+    // Only the rounds core counted (FR-PTS-03). A draw is nobody's result.
+    if (e.Winner is not ((int)Team.T or (int)Team.CT) || !_core.IsPlayCounted) return HookResult.Continue;
 
     var (avgT, avgCt) = TeamAverages();
 
@@ -516,8 +528,6 @@ public HookResult OnRoundEnd(EventRoundEnd e)
         s.SumActual += player.Controller.TeamNum == e.Winner ? 1.0 : 0.0;
         s.RoundsPresent++;
     }
-
-    _lastRoundsPlayed = m.RoundsPlayed;
 
     return HookResult.Continue;
 }
@@ -539,10 +549,11 @@ private double ImputedRating(int teamNum) =>
     MeanRatedOn(teamNum) ?? MeanRatedInMatch() ?? _core.StartPoints;
 ```
 
-A team with no rated humans makes the match unrated when core's
-`Rank.BotsEnabled` is `false` (features.md §3). That check happens once at
-settle time, not per round — a team can legitimately have no rated humans for a
-few rounds and then gain one.
+With core's `Rank.BotsEnabled` off, a round against a team made up only of bots is
+never accrued, because core does not count it (features.md §3). Against a Ranks older
+than 1.0.4, which cannot report that, a settle-time check stands in: a match where one
+side had no rated humans is unrated. It runs at settle rather than per round because a
+team can legitimately have no rated humans for a few rounds and then gain one.
 
 ---
 

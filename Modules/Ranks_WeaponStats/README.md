@@ -132,8 +132,9 @@ so one flip covers core, this module and every other one — and the totals cann
 configured into disagreeing.
 
 With it off (the default) an interaction is dropped whenever the counterparty is a bot:
-hits, damage, hitgroups, kills and headshots against one, and deaths caused by one.
-At the shipped defaults, on a server without warmup, the totals reconcile:
+hits, damage, hitgroups, kills and headshots against one, and deaths caused by one. While
+a team is made up only of bots, nothing is recorded at all, shots included.
+At the shipped defaults the totals reconcile:
 
 ```
 SUM(ranks_weapon_stats.kills) per player  ==  ranks_players.kills
@@ -144,16 +145,19 @@ Core keeps its own overall `hits`, `misses` and `headshots` on the player row, c
 from the same events and now gated by the same switch.
 
 > [!NOTE]
-> **Warmup is the remaining source of divergence.** Core drops warmup deaths entirely
-> when its `Rank.WarmupPoints` is off; this module has no warmup switch and records
-> them, so its totals run ahead on any server with warmup enabled. There is no setting
-> that reconciles the two today.
+> **`Rank.MinPlayers` and `Rank.WarmupPoints` are core's switches too.** Below the
+> minimum, or during a warmup core does not count, this module records nothing either.
+> That needs Ranks 1.0.4 or newer. Against an older Ranks the module follows that Ranks'
+> points instead, so it records nothing while `Rank.UseCoreRankingLogic` is off, and it
+> logs a warning once.
 
 > [!WARNING]
-> **`BotsEnabled = false` makes accuracy read low.** Shots come from `weapon_fire`,
-> which has no victim and therefore cannot be filtered — shots at bots count while the
-> resulting hits do not. Nothing can fix this; the event carries no target. Turn
-> `Rank.BotsEnabled` **on** if you run bots and care about accuracy.
+> **With bots on the same teams as humans, `BotsEnabled = false` makes accuracy read
+> low.** Shots come from `weapon_fire`, which has no victim and therefore cannot be
+> filtered — shots at bots count while the resulting hits do not. Nothing can fix this;
+> the event carries no target. Against a team made up only of bots nothing is recorded,
+> so this only bites when both teams have humans. Turn `Rank.BotsEnabled` **on** if you
+> run bots that way and care about accuracy.
 
 The switch does not affect bots' *own* rows: a bot never gets stats of its own, because
 it has no SteamID64 to key them to.
@@ -228,8 +232,9 @@ dense range — `0` through `11` with a hole at `9`.
 |---------|----------------|----------|
 | "this module is idle" at startup | Ranks is not installed | Install Ranks alongside it |
 | Almost nothing is recorded | FFA server with `CountFriendlyFire` off | Set it `true`, and core's `Rank.FfaMode` to match |
-| Accuracy looks far too low | Bots on the server with core's `Rank.BotsEnabled` off | Turn `Rank.BotsEnabled` on |
-| `!weaponstats` disagrees with `!stats` | Warmup rounds, which core drops and this module keeps | Expected; see the note under the bot switch |
+| Accuracy looks far too low | Bots on human teams with core's `Rank.BotsEnabled` off | Turn `Rank.BotsEnabled` on |
+| Nothing is recorded on a quiet server, in warmup, or against bots | Fewer humans than core's `Rank.MinPlayers`, warmup with `Rank.WarmupPoints` off, or a team made up only of bots with `Rank.BotsEnabled` off | Expected; core counts nothing then either |
+| `!weaponstats` disagrees with `!stats`, or nothing is recorded with `Rank.UseCoreRankingLogic` off | Ranks older than 1.0.4, which cannot report its play gate (the log says so once) | Update Ranks |
 | Stats lost after a crash | Flush interval too long | Lower `Database.FlushIntervalSeconds` |
 | No tables created | Core could not reach the database | Check core's connection name and the startup log |
 | `!hitstats` does nothing | It does not exist | Hitgroup totals are API-only; see the note under Commands |

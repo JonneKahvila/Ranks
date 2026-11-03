@@ -166,6 +166,11 @@ internal sealed class RanksBridge
     [MethodImpl(MethodImplOptions.NoInlining)]
     public string? ResolveTable(string baseName) => _api is IRanksApi api ? api.ResolveTableName(baseName) : null;
 
+    /// <summary>Core's play gate, null when core is absent or not ready.</summary>
+    /// <remarks>Throws MissingMethodException against a Ranks older than the member; the tracker catches it.</remarks>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public bool? IsPlayCounted() => _api is IRanksApi api ? api.IsPlayCounted : null;
+
     [MethodImpl(MethodImplOptions.NoInlining)]
     public string? ConnectionName() => _api is IRanksApi api ? api.ConnectionName : null;
 }

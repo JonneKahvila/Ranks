@@ -248,11 +248,15 @@ Team averages are built from **rated humans**. Two populations need a rule:
 An all-bot team falls back to the mean of every rated player in the match, and
 then to `Rank.StartPoints` if there are none.
 
-Whether a team with **no rated humans at all** can be rated is core's
-`Rank.BotsEnabled`:
+Whether a round against bots can be rated is core's `Rank.BotsEnabled`:
 
-- `false` — the match is unrated for everyone. Nothing is written.
+- `false` — a round in which either team is made up only of bots is not rated. Core
+  does not count it (FR-PTS-03), and this module rates exactly the rounds core counted.
 - `true` — impute and rate normally.
+
+Against a Ranks older than 1.0.4, which cannot report which rounds it counted, the
+module falls back to a match-level rule: with `BotsEnabled` off, a match in which one
+side had no rated humans is unrated for everyone, and nothing is written.
 
 Reading core's setting rather than adding one here is FR-MOD-05 rule 3: the
 operator has already stated whether bots count.

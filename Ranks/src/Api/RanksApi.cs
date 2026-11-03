@@ -241,6 +241,8 @@ internal sealed class RanksApi : IRanksApi
 
     public bool ArePointsEnabled => _awards.ArePointsEnabled;
 
+    public bool IsPlayCounted => _awards.IsPlayCounted;
+
     public RanksPointSettings GetPointSettings()
     {
         var config = _config.Current;

@@ -30,6 +30,7 @@ internal sealed class MatchTracker
     private volatile EloConfig _config;
     private int _lastRoundsPlayed;
     private bool _settled;
+    private bool _playGateUnsupported;
 
     public MatchTracker(ISwiftlyCore core, RanksBridge bridge, RatingStore store, EloConfig config, ILogger logger)
     {
@@ -138,19 +139,46 @@ internal sealed class MatchTracker
     /// <remarks>
     /// The accrual walks every player and reads native team numbers, which must not happen inside
     /// a game-event dispatch even in Post mode — CS2 can be mid entity-shuffle and a managed
-    /// try/catch does not catch the resulting access violation. Only the winner is read here.
+    /// try/catch does not catch the resulting access violation. Only the winner and core's play
+    /// gate are read here. The gate adds no native read: core decides it inside this same dispatch
+    /// for its own round result, once per tick, so asking here returns the verdict core used.
     /// </remarks>
     [GameEventHandler(HookMode.Post)]
     public HookResult OnRoundEnd(EventRoundEnd e)
     {
         var winner = (int)e.Winner;
 
-        _core.Scheduler.NextTick(() => AccrueRound(winner));
+        // A draw is nobody's result: core records none and skips the gate for it, so this does too.
+        bool? counted = winner is TeamT or TeamCt ? PlayGate() : false;
+
+        _core.Scheduler.NextTick(() => AccrueRound(winner, counted));
 
         return HookResult.Continue;
     }
 
-    private void AccrueRound(int winner)
+    /// <summary>Core's play gate, or null when this Ranks cannot report one.</summary>
+    /// <remarks>An older contract fails the bridge call at JIT, which surfaces in this frame.</remarks>
+    private bool? PlayGate()
+    {
+        if (_playGateUnsupported || !_bridge.IsAvailable) return null;
+
+        try
+        {
+            return _bridge.IsPlayCounted();
+        }
+        catch (MissingMethodException)
+        {
+            _playGateUnsupported = true;
+            _logger.LogWarning(
+                "Ranks_EloPoints: this Ranks version cannot report its play gate, so matches are rated under this " +
+                "module's own MinPlayers and warmup rules, which can disagree with core's statistics. " +
+                "Update Ranks to 1.0.4 or newer.");
+
+            return null;
+        }
+    }
+
+    private void AccrueRound(int winner, bool? counted)
     {
         if (!_bridge.IsAvailable) return;
         if (_bridge.GetSettings() is not { } settings) return;
@@ -164,7 +192,10 @@ internal sealed class MatchTracker
 
         _lastRoundsPlayed = match.RoundsPlayed;
 
-        if (match.Phase == GamePhase.GAMEPHASE_WARMUP_ROUND && !settings.WarmupPoints) return;
+        // Exactly the rounds core counted (FR-PTS-03), so no rating moves on play core's statistics
+        // left out. An older core cannot say, and gets this module's own warmup check instead.
+        if (counted is false) return;
+        if (counted is null && match.Phase == GamePhase.GAMEPHASE_WARMUP_ROUND && !settings.WarmupPoints) return;
 
         // A round accruing means a live match, so a previous settle no longer applies.
         _settled = false;
@@ -333,6 +364,20 @@ internal sealed class MatchTracker
     private bool IsRatable(in CoreSettings settings, out string reason)
     {
         var humans = _sessions.Values.Count(s => s.RoundsPresent > 0);
+
+        if (humans == 0)
+        {
+            reason = "no round of it counted";
+            return false;
+        }
+
+        // Core's gate already applied MinPlayers and the bots-only-team rule to every accrued round.
+        // A second, match-level check would withhold a rating whose statistics core kept.
+        if (!_playGateUnsupported)
+        {
+            reason = "";
+            return true;
+        }
 
         if (humans < settings.MinPlayers)
         {

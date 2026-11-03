@@ -36,6 +36,7 @@ public sealed class RanksWeaponStats : BasePlugin
     private bool _reconciled;
     private bool _hotReload;
     private bool _contractLoadFailed;
+    private bool _playGateUnsupported;
 
     public RanksWeaponStats(ISwiftlyCore core) : base(core)
     {
@@ -49,7 +50,7 @@ public sealed class RanksWeaponStats : BasePlugin
         LoadConfiguration();
 
         _writer = new Writer(Core, _logger);
-        _collector = new Collector(Core, _config, _logger);
+        _collector = new Collector(Core, _config, IsPlayCounted, _logger);
 
         // The API comes first now: the menus read through it, and the command and the bridge both
         // hand the same menus on, so nothing downstream can build a second view of these numbers.
@@ -263,6 +264,35 @@ public sealed class RanksWeaponStats : BasePlugin
     private void RefreshBotPolicy()
     {
         if (_bridge.BotsEnabled() is { } enabled) _collector.BotsEnabled = enabled;
+    }
+
+    /// <summary>Core's play gate, asked by the collector per event.</summary>
+    /// <remarks>
+    /// Closed while core is absent or reloading, because core counts nothing then either. A Ranks
+    /// older than the member fails the bridge call at JIT and lands in the catch; its points gate
+    /// is then the stand-in, which is the same answer whenever that core is scoring.
+    /// </remarks>
+    private bool IsPlayCounted()
+    {
+        if (!_bridge.IsAvailable) return false;
+
+        if (!_playGateUnsupported)
+        {
+            try
+            {
+                return _bridge.IsPlayCounted() ?? false;
+            }
+            catch (MissingMethodException)
+            {
+                _playGateUnsupported = true;
+                _logger.LogWarning(
+                    "Ranks_WeaponStats: this Ranks version cannot report its play gate, so weapon stats follow its " +
+                    "points instead, and nothing is recorded while Rank.UseCoreRankingLogic is off. " +
+                    "Update Ranks to 1.0.4 or newer.");
+            }
+        }
+
+        return _bridge.ArePointsEnabled() ?? false;
     }
 
     /// <remarks>

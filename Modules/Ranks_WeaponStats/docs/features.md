@@ -63,11 +63,13 @@ leaderboard farmable.
 > `false`. It warns rather than auto-corrects: an operator may legitimately run
 > FFA and still not want friendly fire counted.
 
-**Counters are raw event counts, and the scoring gates that reach them are the bot
-and warmup ones.** That is core's rule, not this module inventing a policy: per
-FR-PTS-03 `MinPlayers` and FFA suppress the award and never the stat, while
-`BotsEnabled` and `WarmupPoints` discard the death event outright — a bot is not a
-player and a warmup round is not the match, so neither is a fact about play.
+**Counters are raw event counts, recorded only while core counts play.** That is
+core's rule, not this module inventing a policy: per FR-PTS-03 nothing is recorded
+below `Rank.MinPlayers`, during a warmup `Rank.WarmupPoints` excludes, or — with
+`Rank.BotsEnabled` off — while a team is made up only of bots, and an interaction
+involving a bot is dropped. The module asks core's play gate per event
+(`IsPlayCounted`, FR-API-05) and reads `BotsEnabled` through the API, so it carries no
+switch of its own for any of them.
 
 The payoff is a **reconciliation invariant** worth testing against:
 
@@ -76,18 +78,18 @@ SUM(ranks_weapon_stats.kills)  WHERE steam_id = X  ==  ranks_players.kills  for 
 SUM(ranks_weapon_stats.deaths) WHERE steam_id = X  ==  ranks_players.deaths for X
 ```
 
-**It holds at the shipped defaults on a server without warmup**, because both sides
-then count the same events under the same rules — team kills excluded on both (§1.1),
-bot interactions excluded on both (this module reads core's `Rank.BotsEnabled` rather
-than carrying its own switch), every non-bot death counted on both, and bots given rows
-on neither (FR-DB-07).
+**It holds at the shipped defaults**, because both sides count the same events under
+the same rules — nothing below `MinPlayers` or in an excluded warmup on either (this
+module asks core's play gate rather than judging it), team kills excluded on both
+(§1.1), bot interactions excluded on both (this module reads core's `Rank.BotsEnabled`
+rather than carrying its own switch), every other death counted on both, and bots
+given rows on neither (FR-DB-07).
 
-**Warmup breaks it, and no setting here reconciles it.** Core discards warmup deaths
-when `Rank.WarmupPoints` is off; this module has no warmup gate and records them, so
-its totals run **high** by exactly the warmup kills. Closing that would mean either a
-`Tracking.CountDuringWarmup` switch plus a live warmup signal on the core API
-(`GetPointSettings` carries the *setting*, not the current phase), or accepting the
-divergence. It is accepted for now.
+**Against a Ranks older than 1.0.4 it does not hold.** That core cannot report its
+play gate, so the module follows its points gate (`ArePointsEnabled`) instead and logs
+a warning the first time it asks. The module then still records nothing points would
+refuse, but that core's own counters move below `MinPlayers` regardless, and with
+`Rank.UseCoreRankingLogic` off the module records nothing at all.
 
 One setting also breaks it, a deliberate operator choice:
 
@@ -95,7 +97,8 @@ One setting also breaks it, a deliberate operator choice:
 |---|---|
 | `Tracking.CountFriendlyFire = true` | module counts team kills; core never does, so module `kills` runs **high** |
 
-The bot axis can no longer break it: there is nothing here to disagree with core.
+Neither the bot axis nor the play gate can break it: there is nothing here to disagree
+with core.
 
 A **bug** also breaks it, and that is the one to care about: any event the
 module drops without being told to. §1.3 exists for exactly that reason.

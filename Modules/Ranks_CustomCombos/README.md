@@ -213,10 +213,12 @@ watching `player_death` on its own cannot stop core, and plugin order is not gua
 
 **Counting**
 
-A combo is counted whenever it matches, including when a gate refuses the points —
-points are a judgement, counters are facts. The exceptions are the two gates that drop
-the death event itself: with core's `BotsEnabled` off a bot-involved kill never
-reaches this module, and with its `WarmupPoints` off neither does a warmup kill.
+A combo is counted whenever it matches and core counts the kill, even if no points
+follow — a combo worth `0`, a cancelled award, or core scoring switched off. Core does
+not count a kill below its `Rank.MinPlayers`, during a warmup its `WarmupPoints`
+excludes, or with `BotsEnabled` off when a bot is involved or a team is made up only of
+bots; such a kill never reaches this module. With a Ranks older than 1.0.4, combos count
+only while that Ranks awards points.
 
 **Award Flow**
 

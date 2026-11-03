@@ -29,6 +29,13 @@ internal sealed class AwardPipeline
     private readonly ILogger _logger;
     private IRanksKillArbiter? _killArbiter;
 
+    /// <remarks>Only defeats a tick counter that froze or restarted; no single tick lasts this long.</remarks>
+    private const long StaleGateMs = 1000;
+
+    private int? _playCountedTick;
+    private long _playCountedAt;
+    private bool _playCounted;
+
     public AwardPipeline(
         ISwiftlyCore core,
         ConfigHost<RanksConfig> config,
@@ -50,48 +57,40 @@ internal sealed class AwardPipeline
     }
 
     /// <summary>Whether every gate is currently satisfied (FR-API-05).</summary>
-    public bool ArePointsEnabled
+    public bool ArePointsEnabled => _config.Current.Rank.UseCoreRankingLogic && IsPlayCounted;
+
+    /// <summary>Whether play counts at all (FR-PTS-03): the server-wide half of every gate.</summary>
+    /// <remarks>
+    /// Gates every counter as well as every award; a handler writing a counter without it records
+    /// play the points refuse. Decided once per server tick, so every handler of one event — core's
+    /// and each module's — gets the same answer: a time-based cache could expire between a kill's
+    /// stat and its award and split them.
+    /// </remarks>
+    public bool IsPlayCounted
     {
         get
         {
-            var config = _config.Current;
+            var tick = CurrentTick();
+            var now = Environment.TickCount64;
 
-            return config.Rank.UseCoreRankingLogic
-                && HumanCount() >= config.Rank.MinPlayers
-                && (config.Rank.WarmupPoints || !IsWarmup());
+            if (tick is not null && tick == _playCountedTick && now - _playCountedAt < StaleGateMs) return _playCounted;
+
+            _playCounted = EvaluatePlayGate(_config.Current.Rank);
+            _playCountedTick = tick;
+            _playCountedAt = now;
+
+            return _playCounted;
         }
     }
 
-    /// <summary>Whether a death is a fact about play at all (FR-PTS-03).</summary>
+    /// <summary>Whether a death or a hit is a fact about play at all (FR-PTS-03).</summary>
     /// <remarks>
-    /// Warmup and bot involvement drop the event outright rather than only its award, so no counter,
-    /// killstreak or arbiter claim derives from it. Suppressing only the award left killstreak tiers
-    /// payable against bots: <c>AwardKillstreak</c> has no counterparty, so the bot gate never saw one.
+    /// Drops the event outright rather than only its award, so no counter, killstreak or arbiter
+    /// claim derives from it. Suppressing only the award left killstreak tiers payable against bots:
+    /// <c>AwardKillstreak</c> has no counterparty, so the bot gate never saw one.
     /// </remarks>
-    public bool ShouldRecordDeath(bool victimIsBot, bool attackerIsBot)
-    {
-        var config = _config.Current;
-
-        return ShouldRecordDeath(
-            config.Rank.WarmupPoints, IsWarmup(), config.Rank.BotsEnabled, victimIsBot, attackerIsBot);
-    }
-
-    /// <remarks>Split from the live state so the warmup / bot truth table reads as one expression.</remarks>
-    internal static bool ShouldRecordDeath(
-        bool warmupPoints, bool isWarmup, bool botsEnabled, bool victimIsBot, bool attackerIsBot)
-    {
-        if (!warmupPoints && isWarmup) return false;
-        if (!botsEnabled && (victimIsBot || attackerIsBot)) return false;
-
-        return true;
-    }
-
-    /// <summary>Whether a fired shot counts toward the player's accuracy.</summary>
-    /// <remarks>
-    /// Warmup only. A miss names no victim, so the bot gate has nothing to test — and the shooter
-    /// is necessarily human, because a bot has no record to count against in the first place.
-    /// </remarks>
-    public bool ShouldRecordShot() => _config.Current.Rank.WarmupPoints || !IsWarmup();
+    public bool ShouldRecordDeath(bool victimIsBot, bool attackerIsBot) =>
+        IsPlayCounted && (_config.Current.Rank.BotsEnabled || !(victimIsBot || attackerIsBot));
 
     /// <summary>Awards a configured event to a player, applying gates and multipliers.</summary>
     /// <remarks>
@@ -111,9 +110,8 @@ internal sealed class AwardPipeline
 
         if (!config.Rank.UseCoreRankingLogic) return;
 
-        // 1. Gates. MinPlayers suppresses only the award; the caller has already counted the fact.
-        //    Warmup and bot involvement are enforced earlier, by ShouldRecordDeath (FR-PTS-03) — the
-        //    checks below remain as the guard for any caller that is not the death handler.
+        // 1. Gates. A handler counting a fact checks IsPlayCounted before counting it (FR-PTS-03);
+        //    these checks guard award-only events and every other caller.
         if (!PassesGates(config, counterpartyIsBot)) return;
 
         // 2. Base value.
@@ -128,8 +126,8 @@ internal sealed class AwardPipeline
 
     /// <summary>Asks the arbiter what it wants done with a kill. Null when none is registered.</summary>
     /// <remarks>
-    /// Called unconditionally, including when a gate will refuse the points: an arbiter keeps its
-    /// own counters, and those are facts rather than judgements (FR-PTS-03).
+    /// Called for every death core counts, even when no points will follow: an arbiter's counters
+    /// track core's counters, not its awards (FR-PTS-03).
     /// </remarks>
     public RanksKillClaim? ClaimKill(RanksKillContext context)
     {
@@ -253,8 +251,7 @@ internal sealed class AwardPipeline
 
     private bool PassesGates(RanksConfig config, bool counterpartyIsBot)
     {
-        if (HumanCount() < config.Rank.MinPlayers) return false;
-        if (!config.Rank.WarmupPoints && IsWarmup()) return false;
+        if (!IsPlayCounted) return false;
 
         // Bot-ness is passed in rather than inferred from the registry: a bot is never tracked, so
         // its SteamID is never a resident record and "not in the registry" cannot tell a bot apart
@@ -369,15 +366,66 @@ internal sealed class AwardPipeline
     private IPlayer? FindPlayer(ulong steamId) =>
         _core.PlayerManager.GetPlayerFromSteamId(steamId, allowUnauthorized: false);
 
-    private int HumanCount()
+    /// <remarks>
+    /// <c>MinPlayers</c> counts every connected human, spectators included, as K4-LevelRanks does.
+    /// Teams are read only when the bots-only rule can apply, keeping those native reads off servers
+    /// that count bots.
+    /// </remarks>
+    private bool EvaluatePlayGate(RankOptions rank)
     {
-        var count = 0;
+        var checkTeams = !rank.BotsEnabled && !rank.FfaMode;
+        int humans = 0, humansT = 0, humansCt = 0, botsT = 0, botsCt = 0;
 
         foreach (var player in _core.PlayerManager.GetAllPlayers())
-            if (!player.IsFakeClient)
-                count++;
+        {
+            var bot = player.IsFakeClient;
+            if (!bot) humans++;
+            if (!checkTeams) continue;
 
-        return count;
+            switch (TeamOf(player))
+            {
+                case 2 when bot: botsT++; break;
+                case 2: humansT++; break;
+                case 3 when bot: botsCt++; break;
+                case 3: humansCt++; break;
+            }
+        }
+
+        if (humans < rank.MinPlayers) return false;
+        if (!rank.WarmupPoints && IsWarmup()) return false;
+
+        // A team of only bots leaves nobody to play against. FFA is exempt: teams mean nothing there.
+        return !checkTeams || !((botsT > 0 && humansT == 0) || (botsCt > 0 && humansCt == 0));
+    }
+
+    /// <remarks>
+    /// <c>IsValid</c> on both, as in Ranks_EloPoints: a try/catch cannot catch a native access
+    /// violation, and a non-null controller wrapper can still sit over a dead pointer.
+    /// </remarks>
+    private int TeamOf(IPlayer player)
+    {
+        try
+        {
+            return player.IsValid && player.Controller is { IsValid: true } controller ? controller.TeamNum : 0;
+        }
+        catch (Exception ex)
+        {
+            _detail.Write("Ranks: could not read team for slot {Slot}: {Message}", player.Slot, ex.Message);
+            return 0;
+        }
+    }
+
+    /// <remarks>Null before the engine has globals to read, which only disables the cache.</remarks>
+    private int? CurrentTick()
+    {
+        try
+        {
+            return _core.Engine.GlobalVars.TickCount;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     /// <remarks>

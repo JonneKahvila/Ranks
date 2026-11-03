@@ -18,6 +18,13 @@ Notable changes to Ranks_WeaponStats, newest first.
 
 - Required by Ranks 1.0.4 and newer, which no longer loads 1.0.0 of this module. This version
   also works with older Ranks.
+- Weapon statistics now stop below core's `Rank.MinPlayers`, during warmup with
+  `Rank.WarmupPoints` off, and while a team is made up only of bots with `Rank.BotsEnabled`
+  off, as Ranks' own statistics do. Shots, hits, kills and deaths kept counting through the
+  first two before, so `!weaponstats` ran ahead of `!stats`.
+- With a Ranks older than 1.0.4, weapon statistics stop whenever that Ranks gives no points,
+  so nothing is recorded while `Rank.UseCoreRankingLogic` is off. The log says so once;
+  update Ranks.
 
 ## [1.0.0] - 2026-10-26
 

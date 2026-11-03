@@ -53,6 +53,7 @@ public sealed class RankOptions
     /// </remarks>
     public bool UseCoreRankingLogic { get; set; } = true;
 
+    /// <remarks>Humans connected, spectators included. Below it nothing is recorded, not only points (FR-PTS-03).</remarks>
     public int MinPlayers { get; set; } = 4;
 
     /// <remarks>FR-PTS-05's multiplier formula assumes non-negative points, so this cannot go below zero.</remarks>
@@ -61,16 +62,17 @@ public sealed class RankOptions
     public int StartPoints { get; set; } = 0;
 
     /// <remarks>
-    /// <c>false</c> discards warmup deaths outright — no award, and no counters, killstreak or
-    /// arbiter claim derived from them. A warmup round is not the match (FR-PTS-03).
+    /// <c>false</c> means warmup does not count at all — no award and no counter of any kind, the
+    /// same as play below <see cref="MinPlayers"/>. A warmup round is not the match (FR-PTS-03).
     /// </remarks>
     public bool WarmupPoints { get; set; } = false;
 
     /// <remarks>
     /// <c>false</c> discards any interaction involving a bot — points, counters, killstreak and
-    /// arbiter claims alike, on the same terms as warmup: a bot is not a player, so a kill on one
-    /// is not a fact about play (FR-PTS-03). Modules read this through the API rather than
-    /// carrying their own switch, so one flip covers the whole plugin set.
+    /// arbiter claims alike — and, outside FFA, all play while a team is made up only of bots: a bot
+    /// is not a player, so nothing done against one is a fact about play (FR-PTS-03). Modules read
+    /// this through the API rather than carrying their own switch, so one flip covers the whole
+    /// plugin set.
     /// </remarks>
     public bool BotsEnabled { get; set; } = false;
 

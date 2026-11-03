@@ -411,10 +411,20 @@ rule 3 — a reload landing between the kill half and the death half of one
 
 | Event | Side recorded | Guards |
 |---|---|---|
-| `weapon_fire` | shooter's shots | **none** — no victim exists to test |
-| `player_hurt` | attacker's hits, damage, hitgroup | `!IsExcluded` **and** `CountAgainst(victim)` |
-| `player_death` | attacker's kills, headshots | `!IsExcluded` **and** `CountAgainst(victim)` |
-| `player_death` | victim's deaths | `CountFrom(attacker)` only |
+| `weapon_fire` | shooter's shots | play gate only — no victim exists to test |
+| `player_hurt` | attacker's hits, damage, hitgroup | play gate, `!IsExcluded` **and** `CountAgainst(victim)` |
+| `player_death` | attacker's kills, headshots | play gate, `!IsExcluded` **and** `CountAgainst(victim)` |
+| `player_death` | victim's deaths | play gate and `CountFrom(attacker)` only |
+
+**The play gate is core's**, `IsPlayCounted` (FR-API-05): `Rank.MinPlayers` met, not
+a warmup `Rank.WarmupPoints` excludes, and no team made up only of bots while
+`Rank.BotsEnabled` is off. The collector asks it per event through a `Func<bool>`, so
+it still names no contract type, and core decides it once per tick, so the collector
+gets the answer core used for the same event. It is closed while core is absent or
+reloading, because core counts nothing then either. Against a core older than the
+member, that core's points gate stands in, which agrees whenever it is scoring. A shot
+fired while the gate is closed is never latched, so it cannot surface as a miss once it
+opens.
 
 **Deaths deliberately skip `IsExcluded`.** Being killed by a teammate is still a
 death, `ranks_players.deaths` counts every death (FR-DB-04), and the
@@ -585,6 +595,9 @@ are `[Obsolete]` and throw at runtime.
 - [ ] An absent `Tracking` bot key binds to `true`, not `false`
 - [ ] core's `Rank.BotsEnabled = false` stops bot kills, bot hitgroups and deaths
   to bots alike; turning it on starts all of them, with no module-side setting involved
+- [ ] Below core's `Rank.MinPlayers`, and in warmup with `Rank.WarmupPoints` off,
+      nothing is recorded; reaching the minimum starts shots, hits, kills and deaths
+      together, and a shot fired below it never becomes a miss
 - [ ] `CountFriendlyFire = false` drops team hits, damage and kills while a
       death to a teammate still counts; `= true` records all four
 - [ ] Firing an AK and killing with it land on **one** row named `weapon_ak47`,

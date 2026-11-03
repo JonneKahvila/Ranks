@@ -197,9 +197,11 @@ Suppression is scoped deliberately:
 | Killstreak | **no** — a streak is a property of the round, not of this kill |
 | `kills` / `deaths` / `assists` counters | **never** |
 
-That last row is FR-PTS-03: points are a judgement, counters are facts. The gates that
-do reach a counter are `WarmupPoints` and `BotsEnabled`, and they do so by dropping
-the death before this module is consulted at all — for everyone.
+That last row holds because a claim only replaces an award: points are a judgement,
+counters are facts. Whether a kill counts at all is decided earlier, by FR-PTS-03 —
+below `MinPlayers`, during a warmup `WarmupPoints` excludes, or with `BotsEnabled` off
+when a bot is involved or a team is made up only of bots, core drops the death before
+this module is consulted, for everyone.
 
 ---
 
@@ -304,9 +306,14 @@ in a per-player slot that is cleared on disconnect, so the delta has to be taken
 these counts are keyed by SteamID in a plain map and simply wait for the next tick of the
 timer.
 
-**A combo counts whenever it matches, including when a gate refused the points** — FR-PTS-03
-again. The exceptions are `BotsEnabled` and `WarmupPoints`: with either off, core discards the
-matching death and never consults the arbiter, so there is nothing to count.
+**A combo counts whenever core consults the arbiter, whether or not points follow** — with
+`UseCoreRankingLogic` off, or a subscriber cancelling the award, the count still moves.
+Core consults it only for a death it counts (FR-PTS-03): below `MinPlayers`, during a
+warmup `WarmupPoints` excludes, or with `BotsEnabled` off when a bot is involved or a team
+is made up only of bots, there is nothing to count. The arbiter also asks core's play gate
+itself before matching, which only matters against a Ranks older than 1.0.4: that core
+consulted it below `MinPlayers`, so its points gate stands in, and a kill it would not pay
+for is neither counted nor allowed to take `first_blood`.
 
 `!combos`, alias `!mycombos`, name and permission configurable in `commands.jsonc` like
 core's. Lists the caller's combos and counts, ordered by count.

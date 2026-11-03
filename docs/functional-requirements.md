@@ -89,7 +89,7 @@ ships its own numbers rather than injecting them into core's.
 | **Skill group** | The CS2-native scoreboard rank icon (index 1–18 in Competitive mode). |
 | **Module** | A separate SwiftlyS2 plugin that consumes `Ranks.Api.v1`. Not a compile-time feature flag. |
 | **Core event** | A built-in event shipped by `Ranks` itself, namespaced `core.`. |
-| **Gate** | A condition that suppresses scoring (warmup, too few players, bot victim). |
+| **Gate** | A condition under which play does not count — no points and no counters (warmup, too few players, a bot on the other end, a team made up only of bots). |
 
 ---
 
@@ -374,9 +374,9 @@ connect" into one line at boot.
 
 **Fake clients are never tracked and never get a row.** The filter is
 `IPlayer.IsFakeClient`, applied at load, and it is independent of
-`Rank.BotsEnabled` — that gate decides whether a *human* earns points from a
-bot kill, not whether the bot itself has a record. Bots have no SteamID64, so
-persisting them would key every bot on the server to the same value.
+`Rank.BotsEnabled` — that gate decides whether play against a bot counts for a
+*human* (FR-PTS-03), not whether the bot itself has a record. Bots have no
+SteamID64, so persisting them would key every bot on the server to the same value.
 
 **`name` is rewritten on every save**, not fixed at first sight. `!top` renders
 offline players from this column, so a stale value makes the ladder look broken
@@ -443,7 +443,7 @@ at all.
 |---|---|---|
 | Core's own handlers award points | yes | **no** |
 | Core's gates, multipliers and dynamic kill/death scaling | applied to core's awards | **inert — nothing in core computes a multiplier** |
-| Core tracks stat counters (kills, deaths, assists, round wins, bombs, …) | yes | **yes** |
+| Core tracks stat counters (kills, deaths, assists, round wins, bombs, …) while play counts (FR-PTS-03) | yes | **yes** |
 | `AddPoints` / `SetPoints` from a module | stored **raw** | stored **raw** |
 | Core's point settings readable through the API | yes | yes |
 | Ladder, scoreboard, commands, menus, persistence, API | active | active |
@@ -457,7 +457,9 @@ module (FR-MOD-05) becomes the scoring authority and writes the value with
 **Everything downstream of a point value is muted with it.** Gates, the VIP
 multiplier and dynamic kill/death scaling exist to shape *core's* awards; with
 core not awarding they have nothing to act on, so core computes no multiplier
-and applies no gate. They do not quietly keep running against module writes.
+and gates no award. They do not quietly keep running against module writes.
+Whether play counts at all is a separate question, and FR-PTS-03 answers it in
+both modes.
 
 **But the settings stay readable.** Core publishes every point-related setting
 through the API (FR-API-05) in both modes, so a rating module can honour the
@@ -566,47 +568,66 @@ A configured value of `0` disables the event, including its chat line, but
 | Gate | Setting | Default |
 |---|---|---|
 | Minimum players on the server | `Rank.MinPlayers` | `4` |
-| Warmup | `Rank.WarmupPoints` | `false` (no points during warmup) |
-| Bot victim/actor | `Rank.BotsEnabled` | `false` |
+| Warmup | `Rank.WarmupPoints` | `false` (warmup does not count) |
+| Bots — a bot victim or attacker, or a team made up only of bots | `Rank.BotsEnabled` | `false` |
 | FFA mode (suppresses team-damage penalties) | `Rank.FfaMode` | `false` |
 
-**`MinPlayers` and `FfaMode` suppress the award, never the stat increment.
-`WarmupPoints` and `BotsEnabled` discard the death event outright.**
+**A gate stops points and statistics together, always.** `MinPlayers`,
+`WarmupPoints` and `BotsEnabled` decide whether play counts at all, and when it
+does not, nothing is recorded — no counter and no points, in core or in any
+module. No setting lets one move without the other. `FfaMode` only changes how a
+same-team kill is priced.
 
-`MinPlayers` and `FfaMode` are judgements about when play is worth paying for —
-the kills still happened, between real players, so a kill below `MinPlayers`
-still counts. That is the same separation FR-PTS-02 states for a configured value
-of `0` and FR-PTS-00 for `UseCoreRankingLogic = false`: points are a judgement,
-counters are facts.
+`MinPlayers` and `WarmupPoints` are server-wide. With fewer humans connected than
+`MinPlayers` (spectators included), or during a warmup with `WarmupPoints` off, no
+event counts: no kill, death, assist, headshot, hit or miss, no round or match
+result, no bomb plant or defuse, no killstreak and no `IRanksKillArbiter` claim
+(FR-API-11).
 
-`WarmupPoints` and `BotsEnabled` are different in kind. They do not ask whether
-play was worth paying for, they ask whether this was play at all — a warmup round
-is not the match, and a bot is not a player. With either `false`, the matching
-`player_death` is dropped before anything derives from it: no `kills`, `deaths` or
-`assists`, no killstreak, and no `IRanksKillArbiter` claim (FR-API-11).
+`BotsEnabled` works at two levels. With it off, a death or hit involving a bot is
+dropped, and while either team is made up only of bots nothing counts at all — a
+round won against bots was not played against anyone. FFA is exempt from the team
+rule because teams mean nothing there, and a team with nobody on it is not a team
+of bots.
+
+A warmup round is not the match, a bot is not a player, and a near-empty server is
+not the game the ladder ranks. K4-LevelRanks gates every counter on `MinPlayers`
+and warmup the same way.
+
+A drawn round — a `round_end` naming neither T nor CT — is nobody's win or loss.
+
+**The gate is decided once per server tick.** Every handler of one event, core's
+and every module's, gets the same answer, so a kill can never record its
+statistics and then lose its points to a cache that expired between the two reads.
+
+**Not gates.** These withhold points without judging whether play happened, so
+statistics keep counting:
+
+- a configured point value of `0` (FR-PTS-02) — that is pricing;
+- `UseCoreRankingLogic = false` (FR-PTS-00) — scoring is handed to a rating module,
+  which rates only play core counted (FR-MOD-05);
+- a `PointsChanging` subscriber cancelling an award — that module's own policy;
+- a rating module's match that never finishes (a restart or a map change), which
+  has no result to rate.
 
 > [!NOTE]
-> This reverses the earlier rule, under which both suppressed only the award. That
-> version was unsound: `AwardKillstreak` has no counterparty to pass, so the bot gate
-> in `PassesGates` never saw one and **killstreak tiers paid out against bots** on any
-> server that left them in — `streak.godlike` is 15 points, farmable against AI.
-> Gating each award site individually cannot fix that, because a streak is a property
-> of the round rather than of one kill; only dropping the event can.
+> This reverses the earlier rule, under which `MinPlayers` suppressed only the
+> award ("the kills still happened"). Two players on an otherwise empty server could
+> farm `!top kills` and K/D, and a streak built there paid out once the server
+> filled. The same award-only rule was unsound for bots: `AwardKillstreak` has no
+> counterparty to pass, so the bot gate in `PassesGates` never saw one and
+> **killstreak tiers paid out against bots** — `streak.godlike` is 15 points,
+> farmable against AI. Only dropping the event fixes that, because a streak is a
+> property of the round rather than of one kill.
 
-Both gate the three counterparty counters and everything downstream of the death.
-`round_wins`, `round_losses`, `match_wins`, `match_losses`, `bombs_planted` and
-`bombs_defused` come from other events and are unaffected — warmup rounds that end
-still move the round counters.
+The gate is independent of `UseCoreRankingLogic`: with core scoring off
+(FR-PTS-00) it still decides which counters move.
 
-> **Consequence for `SUM(WeaponStats.kills)`.** The bot half reconciles by
-> construction: `Ranks_WeaponStats` carries no bot switch and reads `BotsEnabled`
-> through the API, so the two sides cannot be configured into disagreeing. **The
-> warmup half does not**: `Ranks_WeaponStats` has no warmup gate, so with
-> `WarmupPoints` off it records warmup kills that core now discards, and its total
-> runs ahead on any server with warmup enabled.
-
-Gate state must be readable from the API (FR-API-05) so a module can skip
-expensive work it knows will be discarded.
+Gate state is readable from the API (FR-API-05). `ArePointsEnabled` says whether
+core would award points right now; `IsPlayCounted` says whether play counts at
+all. A module that counts or rates play asks `IsPlayCounted` per event, so its
+totals reconcile with core's — `Ranks_WeaponStats`, `Ranks_CustomCombos` and
+`Ranks_EloPoints` all do.
 
 ### FR-PTS-04 — Core's multipliers
 
@@ -1353,6 +1374,10 @@ Every rating module follows the same contract:
    is evicted once saved.
 6. Degrades to a no-op with one warning at `OnAllPluginsLoaded` when `Ranks` is
    absent (FR-API-08).
+7. Rates only play core counted (FR-PTS-03): it asks `IsPlayCounted` for each
+   round it accrues and adds no gate of its own. A rating withheld for play whose
+   statistics core kept, or paid for play core left out, is exactly the split
+   FR-PTS-03 forbids.
 
 > There is deliberately **no registration call.** Core does not track which
 > module is scoring, so it cannot name the active system in `!rank` or detect
@@ -1738,11 +1763,23 @@ event-specific rather than player-specific.
 
 ```csharp
 bool ArePointsEnabled { get; }          // every gate currently satisfied
+bool IsPlayCounted { get; }             // MinPlayers met, no excluded warmup, no bots-only team
 RanksPointSettings GetPointSettings();  // a snapshot of core's point-related config
 ```
 
 `GetPointSettings` returns a fresh immutable snapshot on every call, so it
 tracks live config reloads (NFR-08) rather than pinning values at load.
+
+`IsPlayCounted` is the server-wide half of FR-PTS-03. It ignores
+`UseCoreRankingLogic`, and a single interaction with a bot is left to the caller
+to judge with `BotsEnabled`, because that is a property of each event. While it is
+`false` core records nothing, so a module counting or rating the same play asks it
+per event. Core decides it once per server tick, so the module gets exactly the
+answer core used for that event, and asking is cheap even from `weapon_fire`. It
+is a later addition, so a module calling it against an older core gets a
+`MissingMethodException` when the call is JIT-compiled — keep the call in a
+`NoInlining` method and catch it. That core's `ArePointsEnabled` is the stand-in:
+the two agree whenever it is scoring.
 
 ```csharp
 sealed record RanksPointSettings(

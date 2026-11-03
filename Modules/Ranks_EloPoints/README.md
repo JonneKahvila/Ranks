@@ -116,12 +116,20 @@ than making the operator set the same thing twice:
 |---|---|
 | `Rank.StartPoints` | the rating an unrated player enters their first match with |
 | `Rank.MinPoints` | the floor a rating cannot fall below |
-| `Rank.MinPlayers` | the minimum humans for a match to be rated at all |
-| `Rank.WarmupPoints` | whether warmup rounds count |
-| `Rank.BotsEnabled` | whether a team with no rated humans can be rated |
+| `Rank.MinPlayers` | a round played with fewer humans connected is not rated |
+| `Rank.WarmupPoints` | whether warmup rounds are rated |
+| `Rank.BotsEnabled` | with it off, a round against a team made up only of bots is not rated |
 
-Core applies none of these itself with `UseCoreRankingLogic` off. They are still the
-operator's stated intent, and this module honours them.
+Core still applies `MinPlayers`, `WarmupPoints` and `BotsEnabled` to its statistics with
+`UseCoreRankingLogic` off, and this module rates exactly the rounds core counted, so a
+rating never moves on play core's statistics left out, and never stays still on play they
+kept. A drawn round is rated for nobody, as core records it for nobody.
+
+> [!NOTE]
+> That needs Ranks 1.0.4 or newer. Against an older Ranks the module rates under its own
+> rules and logs a warning once: a match needs `Rank.MinPlayers` humans who played in it,
+> warmup is read from the match phase, and with `Rank.BotsEnabled` off a match where one
+> side had no rated humans is unrated.
 
 ### The two modes
 
@@ -243,6 +251,6 @@ match has no result until it ends, and a provisional one would be treated as set
 | Warning about `UseCoreRankingLogic` | Core is still scoring too | Set it to `false` in core's config |
 | Everyone sits in the bottom tier | Core's point-shaped ladder is still in use | Copy `resources/examples/ranks-elo.jsonc` over core's `ranks.jsonc` |
 | Ratings barely move | `ConfidenceRounds` shrinking short sessions | Raise `K` before lowering `ConfidenceRounds` |
-| No match is ever rated | Fewer humans than `Rank.MinPlayers`, or no match end | Check core's `MinPlayers` and the match config |
+| No match is ever rated | Every round played below `Rank.MinPlayers`, in warmup, or against a team of only bots, or no match end | Check core's `MinPlayers` and `BotsEnabled`, and the match config |
 | AFK players losing rating | AFK manager moves them to spectator | Lower or disable `Abandon.Penalty` |
 | Numbers look meaningless | Running on FFA, DM, arenas or surf | Unsupported — this module is 5v5 only |
