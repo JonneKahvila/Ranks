@@ -14,6 +14,11 @@ Notable changes to Ranks_CustomCombos, newest first.
 
      See .github/instructions/changelog.instructions.md for the full style. -->
 
+## [1.0.2] - 2026-11-04
+
+- New API member `GetComboName`: the name `!combos` shows for a combo, so other plugins and
+  menu renderers label combos the same way.
+
 ## [1.0.1] - 2026-11-04
 
 - Required by Ranks 1.0.4, which no longer loads 1.0.0 of this module.

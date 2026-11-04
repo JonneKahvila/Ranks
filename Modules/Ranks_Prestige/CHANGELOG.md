@@ -14,6 +14,12 @@ Notable changes to Ranks_Prestige, newest first.
 
      See .github/instructions/changelog.instructions.md for the full style. -->
 
+## [1.0.1] - 2026-11-04
+
+- Publishes a read API, `Ranks.Prestige.Api.v1`, with each player's prestige level and the
+  points to the next one. The module now ships `Ranks_Prestige.Contract.dll` in
+  `resources/exports`; install it with the plugin.
+
 ## [1.0.0] - 2026-10-26
 
 First release. Prestige levels shown as a virtual deduction, with the player's real points

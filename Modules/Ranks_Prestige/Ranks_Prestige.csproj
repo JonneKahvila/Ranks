@@ -24,6 +24,16 @@
          TryGetSharedInterface silently stops matching on a server where Ranks is plainly running
          (FR-API-00). -->
     <ProjectReference Include="../../Ranks.Contract/Ranks.Contract.csproj" Private="false" />
+
+    <!-- Same single-copy rule, but this module ships the copy itself (CopyContract below): it owns
+         this contract, so no other component is guaranteed to be installed to ship it. -->
+    <ProjectReference Include="Ranks_Prestige.Contract/Ranks_Prestige.Contract.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The contract lives inside this project's directory, so the default glob would compile its
+         sources into the plugin on top of referencing the assembly. -->
+    <Compile Remove="Ranks_Prestige.Contract/**/*.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -31,6 +41,29 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
+
+  <!-- Resolved inside a target because the contract DLL does not exist during evaluation, and
+       shipped to both resources/exports and next to the plugin DLL — Ranks_WeaponStats.csproj
+       explains why each copy is needed. -->
+  <Target Name="CopyContract" AfterTargets="Build">
+    <PropertyGroup>
+      <_ApiContractDll>$(MSBuildThisFileDirectory)Ranks_Prestige.Contract/build/$(TargetFramework)/Ranks_Prestige.Contract.dll</_ApiContractDll>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(_ApiContractDll)')"
+           Text="CopyContract: $(_ApiContractDll) is missing. Build Ranks_Prestige.Contract first." />
+    <Copy SourceFiles="$(_ApiContractDll)" DestinationFolder="$(OutDir)resources/exports" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(_ApiContractDll)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyContractToPublish" AfterTargets="Publish">
+    <PropertyGroup>
+      <_ApiContractDll>$(MSBuildThisFileDirectory)Ranks_Prestige.Contract/build/$(TargetFramework)/Ranks_Prestige.Contract.dll</_ApiContractDll>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(_ApiContractDll)')"
+           Text="CopyContractToPublish: $(_ApiContractDll) is missing. Build Ranks_Prestige.Contract first." />
+    <Copy SourceFiles="$(_ApiContractDll)" DestinationFolder="$(PublishDir)resources/exports" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(_ApiContractDll)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+  </Target>
 
   <UsingTask TaskName="ExtractPluginVersion"
              TaskFactory="RoslynCodeTaskFactory"

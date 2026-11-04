@@ -196,17 +196,7 @@ internal sealed class ScoreboardService : IDisposable
 
         if (mode == RankDisplayMode.Off) return;
 
-        var index = _ladder.IndexFor(displayPoints);
-        var skillGroup = _ladder.Tiers[index].SkillGroup;
-
-        var value = mode switch
-        {
-            RankDisplayMode.Premier => displayPoints,
-            RankDisplayMode.Competitive => CompetitiveIcon(config, skillGroup, MaxSkillGroup),
-            RankDisplayMode.Wingman => CompetitiveIcon(config, skillGroup, MaxSkillGroup),
-            RankDisplayMode.Custom => CustomIcon(config.Scoreboard, index + 1),
-            _ => displayPoints,
-        };
+        var value = IconValue(config, mode, displayPoints);
 
         var rankType = EngineRankType(mode);
 
@@ -248,6 +238,22 @@ internal sealed class ScoreboardService : IDisposable
             : config.Scoreboard.RankMode;
 
     private const int MaxSkillGroup = 18;
+
+    /// <summary>The value written to <c>CompetitiveRanking</c> for a point total.</summary>
+    /// <remarks>Shared with <c>IRanksApi.GetRankIcon</c>, so a menu drawing the icon cannot drift from the scoreboard.</remarks>
+    internal int IconValue(RanksConfig config, RankDisplayMode mode, int points)
+    {
+        var index = _ladder.IndexFor(points);
+
+        return mode switch
+        {
+            RankDisplayMode.Premier => points,
+            RankDisplayMode.Competitive => CompetitiveIcon(config, _ladder.Tiers[index].SkillGroup, MaxSkillGroup),
+            RankDisplayMode.Wingman => CompetitiveIcon(config, _ladder.Tiers[index].SkillGroup, MaxSkillGroup),
+            RankDisplayMode.Custom => CustomIcon(config.Scoreboard, index + 1),
+            _ => points,
+        };
+    }
 
     /// <summary>Translates the plugin-level mode to the engine's <c>m_iCompetitiveRankType</c>.</summary>
     /// <remarks>

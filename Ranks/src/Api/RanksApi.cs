@@ -297,4 +297,37 @@ internal sealed class RanksApi : IRanksApi
     public Task<bool> SavePlayerAsync(ulong steamId) => _sessions.SavePlayerAsync(steamId);
 
     public Task<int> SaveAllAsync() => _sessions.SaveAllAsync();
+
+    public IReadOnlyList<RanksTier> GetLadder() =>
+        _ladder.Tiers.Select((tier, index) => new RanksTier(index, tier.Name, tier.Tag, tier.Points, tier.Hex)).ToArray();
+
+    public RanksRankIcon GetRankIcon(int points)
+    {
+        var config = _config.Current;
+        var mode = config.Scoreboard.RankMode;
+
+        return new RanksRankIcon(mode.ToString(), mode == RankDisplayMode.Off ? 0 : _scoreboard.IconValue(config, mode, points));
+    }
+
+    public async Task<RanksPlayerSnapshot?> LoadSnapshotAsync(ulong steamId)
+    {
+        // Resident first: the stored row lags whatever the player earned since the last save.
+        if (_registry.BySteamId(steamId) is { } resident) return _sessions.Snapshot(resident);
+
+        return await Task.Run(() =>
+        {
+            try
+            {
+                if (_store.Load(steamId) is not { } stored) return null;
+
+                stored.RankIndex = _ladder.IndexFor(stored.Points);
+                return _sessions.Snapshot(stored);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ranks: snapshot load failed for {SteamId}.", steamId);
+                return null;
+            }
+        }).ConfigureAwait(false);
+    }
 }

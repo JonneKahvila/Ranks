@@ -429,7 +429,12 @@ internal sealed class PlayerSessions
             record.SteamId, record.Name, record.Points, tier.Name, tier.Tag, record.RankIndex,
             record.Kills, record.Deaths, record.Assists,
             record.RoundWins, record.RoundLosses, record.MatchWins, record.MatchLosses,
-            record.BombsPlanted, record.BombsDefused, record.FirstSeen, record.LastSeen);
+            record.BombsPlanted, record.BombsDefused, record.FirstSeen, record.LastSeen)
+        {
+            Headshots = record.Headshots,
+            Hits = record.Hits,
+            Misses = record.Misses,
+        };
     }
 
     private PlayerRecord NewRecord(ulong steamId, string name) => new()

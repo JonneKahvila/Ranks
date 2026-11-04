@@ -158,4 +158,17 @@ public interface IRanksApi
 
     /// <summary>Returns records committed. Coalesces — a concurrent call joins the in-flight pass.</summary>
     Task<int> SaveAllAsync();
+
+    // ---- FR-API-12 display data ----------------------------------------------
+
+    /// <summary>The operator's ladder, lowest tier first. A fresh list per call, so it tracks reloads.</summary>
+    IReadOnlyList<RanksTier> GetLadder();
+
+    /// <summary>The rank icon the scoreboard draws for a point total in the configured <c>Scoreboard.RankMode</c>.</summary>
+    /// <remarks>Answers for a number, not a player, so display overlays do not apply.</remarks>
+    RanksRankIcon GetRankIcon(int points);
+
+    /// <summary>A player's snapshot online or not: the resident record when there is one, else the stored row.</summary>
+    /// <remarks>Null when the player has never been seen. Reads the database for an offline player.</remarks>
+    Task<RanksPlayerSnapshot?> LoadSnapshotAsync(ulong steamId);
 }

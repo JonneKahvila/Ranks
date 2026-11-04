@@ -22,6 +22,13 @@ Notable changes to Ranks, newest first.
 
 ---
 
+## [1.0.5] - 2026-11-04
+
+- New read-only API members for menu renderers and other plugins: the ladder (`GetLadder`),
+  the scoreboard's rank icon for any point total (`GetRankIcon`), and any player's statistics
+  whether online or not (`LoadSnapshotAsync`). Snapshots now also carry headshots, hits and
+  misses. CustomHUD draws the `!rank` pages from these, so update it along with Ranks.
+
 ## [1.0.4] - 2026-11-04
 
 - Fixed Ranks breaking other plugins that use FluentMigrator, such as VIPCore. After
