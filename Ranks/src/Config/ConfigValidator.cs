@@ -88,9 +88,8 @@ internal static partial class ConfigValidator
 
     private static void ClampVip(VipOptions vip, ILogger logger)
     {
-        // A flag list is a set, and the binder appends the file's entries onto the model's
-        // defaults — so the shipped file binds "@ranks/vip" twice. It cannot be emptied either;
-        // Vip.Multiplier = 1.0 is how an operator turns the multiplier off.
+        // A flag list is a set; the same flag written twice is one flag. An empty list grants VIP
+        // to nobody, and Vip.Multiplier = 1.0 turns the multiplier off.
         if (vip.Flags.Count > 1)
             vip.Flags = vip.Flags.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 

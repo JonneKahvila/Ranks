@@ -1109,7 +1109,7 @@ Ranks/
 │   ├── Ranks_WeaponStats/               ← data, publishes its own contract
 │   ├── Ranks_EloPoints/                 ← absolute, publishes its own contract
 │   ├── Ranks_CustomCombos/              ← additive, publishes its own contract
-│   └── Ranks_Prestige/                  ← display, no contract
+│   └── Ranks_Prestige/                  ← display, publishes its own contract
 ├── CHANGELOG.md
 ├── LICENSE
 └── README.md

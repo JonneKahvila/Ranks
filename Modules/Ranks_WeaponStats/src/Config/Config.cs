@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Microsoft.Extensions.Configuration;
 
 namespace Ranks.WeaponStats.Config;
 
@@ -63,8 +64,25 @@ internal sealed class CommandsConfig
     public const string WeaponStats = "weaponstats";
 
     [Description("Command names, aliases and permissions. An empty Command removes the command.")]
-    public Dictionary<string, CommandDefinition> All { get; set; } = new(StringComparer.OrdinalIgnoreCase)
+    public Dictionary<string, CommandDefinition> All { get; set; } = Defaults();
+
+    private static Dictionary<string, CommandDefinition> Defaults() => new(StringComparer.OrdinalIgnoreCase)
     {
         [WeaponStats] = new() { Command = "weaponstats", Aliases = ["ws"] },
     };
+
+    /// <summary>Reads <c>commands.jsonc</c>: an entry in the file replaces its default whole.</summary>
+    /// <remarks>
+    /// Not <c>Get&lt;CommandsConfig&gt;()</c>: the binder appends a file's array onto a non-empty
+    /// list, so a renamed alias registered beside the shipped one instead of replacing it. The
+    /// defaults still seed the generated file, and stand in for an entry the file lacks.
+    /// </remarks>
+    public static CommandsConfig Bind(IConfiguration section)
+    {
+        var config = new CommandsConfig { All = new(StringComparer.OrdinalIgnoreCase) };
+        section.Bind(config);
+        foreach (var (key, definition) in Defaults())
+            config.All.TryAdd(key, definition);
+        return config;
+    }
 }

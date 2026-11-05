@@ -18,6 +18,8 @@ Notable changes to Ranks_CustomCombos, newest first.
 
 - New API member `GetComboName`: the name `!combos` shows for a combo, so other plugins and
   menu renderers label combos the same way.
+- Renaming or removing an alias in `commands.jsonc` now takes effect: the shipped `!mycombos`
+  used to stay registered next to whatever replaced it.
 
 ## [1.0.1] - 2026-11-04
 

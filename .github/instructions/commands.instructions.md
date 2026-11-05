@@ -39,6 +39,12 @@ before the handler runs, so an admin command needs no in-body check.
 `registerRaw: true` keeps the console name equal to the configured one instead
 of `sw_<name>`.
 
+**Bind `commands.jsonc` with `CommandsConfig.Bind`, never `Get<CommandsConfig>()`.**
+The binder appends a file's array onto a non-empty list default, so a plain bind
+keeps every shipped alias registered beside the operator's replacement. Core and
+every module with commands bind onto an empty dictionary and only then fill in
+the keys the file lacks (FR-CMD-01).
+
 ### Pattern B: `[Command]` attribute — fixed names only
 
 Correct for any command whose name can never change. **`Ranks` has none**, so

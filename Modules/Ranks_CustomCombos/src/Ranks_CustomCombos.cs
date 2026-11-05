@@ -187,7 +187,7 @@ public sealed class RanksCustomCombos : BasePlugin
             });
 
         _config = BindConfig();
-        _commandsConfig = Core.Configuration.Manager.GetSection("Commands").Get<CommandsConfig>() ?? new CommandsConfig();
+        _commandsConfig = CommandsConfig.Bind(Core.Configuration.Manager.GetSection("Commands"));
 
         // Combos are re-parsed on every reload, so an operator edits the file and the next kill
         // uses it. Command names are not re-read: renaming one needs the old registration dropped,

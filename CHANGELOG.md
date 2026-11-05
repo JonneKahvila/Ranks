@@ -28,6 +28,10 @@ Notable changes to Ranks, newest first.
   the scoreboard's rank icon for any point total (`GetRankIcon`), and any player's statistics
   whether online or not (`LoadSnapshotAsync`). Snapshots now also carry headshots, hits and
   misses. CustomHUD draws the `!rank` pages from these, so update it along with Ranks.
+- Aliases in `commands.jsonc` and `Vip.Flags` in `config.jsonc` now replace the shipped ones
+  instead of adding to them: changing `myrank` used to keep `!myrank` registered, and replacing
+  `@ranks/vip` still granted VIP to it. Check both files if you edited either list.
+- Includes `Ranks_WeaponStats` 1.0.2, which fixes the same alias problem for `!ws`.
 
 ## [1.0.4] - 2026-11-04
 

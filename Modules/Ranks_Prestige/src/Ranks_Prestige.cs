@@ -144,7 +144,7 @@ public sealed class RanksPrestige : BasePlugin
             });
 
         _config = BindConfig();
-        _commandsConfig = Core.Configuration.Manager.GetSection("Commands").Get<CommandsConfig>() ?? new CommandsConfig();
+        _commandsConfig = CommandsConfig.Bind(Core.Configuration.Manager.GetSection("Commands"));
 
         // Levels are re-read on every reload and re-applied to everyone present. Command names are
         // not: renaming one needs the old registration dropped, so it stays restart-only.

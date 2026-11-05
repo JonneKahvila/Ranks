@@ -336,6 +336,7 @@ public interface ICustomCombosApi
     Task<IReadOnlyList<ComboStatRow>> GetCombosAsync(ulong steamId);
     Task<ComboStatRow?> GetComboAsync(ulong steamId, string comboKey);
     IReadOnlyList<string> ConfiguredCombos { get; }
+    string GetComboName(string comboKey);
 }
 ```
 
@@ -349,6 +350,13 @@ failing the query.
 database. It is the only way to render a combo an operator has configured but nobody has
 landed — no counter row exists for those. It returns **resolution order** (most specific
 first), not config order.
+
+`GetComboName` is §6's resolution as `!combos` uses it — the `combo.<key>` translation, or
+the bare key on a miss — with chat colour tokens such as `{lime}` stripped. A menu row is
+HTML, where a token left in prints literally, and the names are operator-authored and shared
+with the chat line, so they routinely carry one. It always reads `combo.<key>`: a rule's
+`Message` overrides only the chat line. Synchronous, for the same reason as
+`ConfiguredCombos` — it reads loaded translations, not the database.
 
 Combo keys are operator-defined, so the set is server-specific: a consumer must treat an
 unfamiliar key as ordinary data rather than an error.

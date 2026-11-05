@@ -13,9 +13,11 @@ breaking change to it as a breaking change to every module in the ecosystem.
 > **The dependency runs one way.** Core never calls module code, never holds a
 > module-supplied delegate, and never gains config keys because a module was
 > installed. The contract therefore exposes **facts and operations only** — read
-> a record, change points, persist, observe, and read core's own settings. If a
-> new method would have core invoking something a module supplied, it belongs on
-> the module's side of the line instead. See the requirements doc, FR-PTS-01.
+> a record, change points, persist, observe, read core's own settings, and read
+> what its ladder and scoreboard display, so another plugin can draw the same
+> page (FR-API-12). If a new method would have core invoking something a module
+> supplied, it belongs on the module's side of the line instead. See the
+> requirements doc, FR-PTS-01.
 
 ### Contract project
 

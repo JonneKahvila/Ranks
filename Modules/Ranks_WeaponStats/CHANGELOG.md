@@ -14,6 +14,11 @@ Notable changes to Ranks_WeaponStats, newest first.
 
      See .github/instructions/changelog.instructions.md for the full style. -->
 
+## [1.0.2] - 2026-11-05
+
+- Renaming or removing an alias in `commands.jsonc` now takes effect: `"Aliases": ["wstats"]`
+  used to keep `!ws` working too. Restart the server after editing aliases.
+
 ## [1.0.1] - 2026-11-04
 
 - Required by Ranks 1.0.4, which no longer loads 1.0.0 of this module.

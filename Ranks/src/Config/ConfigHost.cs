@@ -18,6 +18,7 @@ internal sealed class ConfigHost<T> : IDisposable
     private readonly string _fileName;
     private readonly string _sectionName;
     private readonly IConfiguration _root;
+    private readonly Func<IConfiguration, T> _bind;
     private readonly Action<T, ILogger>? _validate;
     private readonly ILogger _logger;
     private readonly IDisposable? _subscription;
@@ -25,11 +26,13 @@ internal sealed class ConfigHost<T> : IDisposable
     private volatile T _current;
     private string _lastApplied;
 
-    private ConfigHost(ISwiftlyCore core, string fileName, string sectionName, Action<T, ILogger>? validate, ILogger logger, T initial, string fingerprint)
+    private ConfigHost(ISwiftlyCore core, string fileName, string sectionName, Func<IConfiguration, T> bind, Action<T, ILogger>? validate,
+        ILogger logger, T initial, string fingerprint)
     {
         _fileName = fileName;
         _sectionName = sectionName;
         _root = core.Configuration.Manager;
+        _bind = bind;
         _validate = validate;
         _logger = logger;
         _current = initial;
@@ -43,12 +46,14 @@ internal sealed class ConfigHost<T> : IDisposable
     public T Current => _current;
 
     /// <summary>Creates the file if absent, binds it, and validates. Throws if it cannot be used.</summary>
+    /// <param name="bind">Reads the section; for a model whose collection defaults the plain binder would append to.</param>
     public static ConfigHost<T> Create(
         ISwiftlyCore core,
         ILogger logger,
         string fileName,
         string sectionName,
-        Action<T, ILogger>? validate = null)
+        Action<T, ILogger>? validate = null,
+        Func<IConfiguration, T>? bind = null)
     {
         core.Configuration
             // addMissingKeys: a plugin upgrade inserts new keys into an existing file with their
@@ -59,17 +64,18 @@ internal sealed class ConfigHost<T> : IDisposable
             .Configure(builder => builder.AddJsonFile(
                 core.Configuration.GetConfigPath(fileName), optional: false, reloadOnChange: true));
 
-        var initial = Bind(core.Configuration.Manager, sectionName);
+        bind ??= section => section.Get<T>() ?? new T();
+        var initial = bind(core.Configuration.Manager.GetSection(sectionName));
 
-        // Taken before validation, because validation mutates — CommandsConfig.Validate dedupes the
-        // aliases the binder doubled. Apply() fingerprints the raw bind, so fingerprinting the
-        // validated one here would leave the two describing different shapes, and the next save of
-        // ANY file would re-apply this host and log a reload nobody asked for.
+        // Taken before validation, because validation mutates (it dedupes and clamps). Apply()
+        // fingerprints the raw bind, so fingerprinting the validated one here would leave the two
+        // describing different shapes, and the next save of ANY file would re-apply this host and
+        // log a reload nobody asked for.
         var fingerprint = Fingerprint(initial);
 
         validate?.Invoke(initial, logger);
 
-        return new ConfigHost<T>(core, fileName, sectionName, validate, logger, initial, fingerprint);
+        return new ConfigHost<T>(core, fileName, sectionName, bind, validate, logger, initial, fingerprint);
     }
 
     /// <summary>Re-binds on a file edit, ignoring notifications that carry no change.</summary>
@@ -84,7 +90,7 @@ internal sealed class ConfigHost<T> : IDisposable
 
         try
         {
-            incoming = Bind(_root, _sectionName);
+            incoming = _bind(_root.GetSection(_sectionName));
         }
         catch (Exception ex)
         {
@@ -122,8 +128,6 @@ internal sealed class ConfigHost<T> : IDisposable
         }
     }
 
-    private static T Bind(IConfiguration root, string sectionName) => root.GetSection(sectionName).Get<T>() ?? new T();
-
     /// <remarks>
     /// Fingerprints the bound model rather than the file bytes, so reformatting or a comment edit
     /// is correctly a no-op and another file's save cannot be mistaken for this one.
@@ -145,13 +149,13 @@ internal static class ConfigFiles
     private const string LadderFile = "ranks.jsonc";
 
     public static ConfigHost<RanksConfig> Main(ISwiftlyCore core, ILogger logger) =>
-        ConfigHost<RanksConfig>.Create(core, logger, "config.jsonc", "Ranks", ConfigValidator.Validate);
+        ConfigHost<RanksConfig>.Create(core, logger, "config.jsonc", "Ranks", ConfigValidator.Validate, RanksConfig.Bind);
 
     public static ConfigHost<PointsConfig> Points(ISwiftlyCore core, ILogger logger) =>
         ConfigHost<PointsConfig>.Create(core, logger, "points.jsonc", "Points");
 
     public static ConfigHost<CommandsConfig> Commands(ISwiftlyCore core, ILogger logger) =>
-        ConfigHost<CommandsConfig>.Create(core, logger, "commands.jsonc", "Commands", CommandsConfig.Validate);
+        ConfigHost<CommandsConfig>.Create(core, logger, "commands.jsonc", "Commands", CommandsConfig.Validate, CommandsConfig.Bind);
 
     public static ConfigHost<LadderConfig> Ladder(ISwiftlyCore core, ILogger logger)
     {

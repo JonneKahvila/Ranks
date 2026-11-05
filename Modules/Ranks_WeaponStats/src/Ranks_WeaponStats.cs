@@ -15,7 +15,7 @@ namespace Ranks.WeaponStats;
 
 [PluginMetadata(
     Id = "Ranks_WeaponStats",
-    Version = "1.0.1",
+    Version = "1.0.2",
     Name = "Ranks WeaponStats",
     Author = "Shmitzas",
     Description = "Per-weapon and per-hitgroup statistics for the Ranks plugin.")]
@@ -182,7 +182,7 @@ public sealed class RanksWeaponStats : BasePlugin
             });
 
         _config = BindConfig();
-        _commandsConfig = Core.Configuration.Manager.GetSection("Commands").Get<CommandsConfig>() ?? new CommandsConfig();
+        _commandsConfig = CommandsConfig.Bind(Core.Configuration.Manager.GetSection("Commands"));
 
         // The snapshot is reassigned rather than captured once, which is what keeps DetailedLogging
         // and the two Tracking switches live without a restart. Command names are not re-read:
