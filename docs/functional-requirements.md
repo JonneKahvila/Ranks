@@ -1166,6 +1166,11 @@ confirmation screen of its own.
 | `!removepoints <target> <amount>` | `ranks.admin` | Subtract |
 | `!resetrank <target>` | `ranks.admin` | Reset a player |
 
+`<target>` is a name (an exact match wins, otherwise a partial one), a SteamID in
+any notation, the id `status` prints (with or without `#`), or an `@` group. Only a
+group may resolve to several players: an ambiguous name is refused, never applied
+to everyone it matches.
+
 ### FR-CMD-04 — One menu tree, open to modules
 
 **Reversed in v1.1.** This requirement previously read *"Menus are core's own"*

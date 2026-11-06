@@ -68,11 +68,11 @@ Members are `Sender` (`IPlayer?`), `IsSentByPlayer`, `Prefix`, `IsSlient`
 `ReplyAsync`. `Sender` is `null` from the server console, so check
 `IsSentByPlayer` before dereferencing it.
 
-> **Whether `Args[0]` is the first argument or the command name is not stated
-> anywhere in the framework docs.** Confirm it once on a live server and fix the
-> indexing everywhere — guessing wrong shifts every argument by one, which
-> parses as a usage error rather than a crash. `CommandName` is available
-> separately either way, so nothing needs `Args` to carry it.
+> **`Args` excludes the command name — `Args[0]` is the first argument.** The
+> framework docs do not say so; the native dispatcher tokenizes the line and erases
+> the command token before handing it over, and `CommandName` carries it instead.
+> Indexing from 1 parses as a usage error rather than a crash, which is how core's
+> admin commands once answered every correctly typed call.
 
 ```csharp
 private void OnGivePoints(ICommandContext context)
@@ -93,6 +93,13 @@ private void OnGivePoints(ICommandContext context)
     }
 }
 ```
+
+### Targets
+
+Resolve a player argument with `Commands/TargetResolver`, never
+`Core.PlayerManager.FindTargettedPlayers` directly: the framework search skips
+players without a pawn and matches nobody when the *sender* has none, so a
+spectating admin targets no one, and it reads a bare `status` id as a name.
 
 ### Permission naming
 

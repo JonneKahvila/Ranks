@@ -160,26 +160,30 @@ internal sealed class CommandRegistry
 
     private readonly Dictionary<ulong, DateTime> _pendingResets = [];
 
+    /// <remarks>
+    /// <c>Args</c> excludes the command name. The amount is the last argument and the target is
+    /// everything before it, so an unquoted name containing a space still resolves.
+    /// </remarks>
     private void AdjustPoints(ICommandContext ctx, AdjustMode mode)
     {
-        if (ctx.Args.Length < 3)
+        if (ctx.Args.Length < 2)
         {
             ctx.Reply(_core.Localizer["admin.usage", ctx.CommandName]);
             return;
         }
 
-        if (!int.TryParse(ctx.Args[2], out var amount))
+        var amountArg = ctx.Args[^1];
+
+        if (!int.TryParse(amountArg, out var amount))
         {
-            ctx.Reply(_core.Localizer["admin.bad_amount", ctx.Args[2]]);
+            ctx.Reply(_core.Localizer["admin.bad_amount", amountArg]);
             return;
         }
 
-        foreach (var target in Targets(ctx, ctx.Args[1]))
+        var reason = $"admin.{mode.ToString().ToLowerInvariant()}";
+
+        foreach (var record in TargetRecords(ctx, ctx.Args[..^1]))
         {
-            if (_registry.BySlot(target.Slot) is not { } record) continue;
-
-            var reason = $"admin.{mode.ToString().ToLowerInvariant()}";
-
             if (mode == AdjustMode.Set) _api.SetPoints(record.SteamId, amount, reason);
             else _api.AddPoints(record.SteamId, mode == AdjustMode.Add ? amount : -amount, reason, showMessage: false);
 
@@ -189,31 +193,41 @@ internal sealed class CommandRegistry
 
     private void ResetTarget(ICommandContext ctx)
     {
-        if (ctx.Args.Length < 2)
+        if (ctx.Args.Length == 0)
         {
             ctx.Reply(_core.Localizer["admin.usage_target", ctx.CommandName]);
             return;
         }
 
-        foreach (var target in Targets(ctx, ctx.Args[1]))
+        foreach (var record in TargetRecords(ctx, ctx.Args))
         {
-            if (_registry.BySlot(target.Slot) is not { } record) continue;
-
             _reset.Apply(record);
             ctx.Reply(_core.Localizer["admin.reset", record.Name]);
         }
     }
 
-    private IEnumerable<IPlayer> Targets(ICommandContext ctx, string pattern)
+    /// <summary>The loaded records the target arguments name, after replying for anything unusable.</summary>
+    private List<PlayerRecord> TargetRecords(ICommandContext ctx, string[] targetArgs)
     {
-        var matches = _core.PlayerManager
-            .FindTargettedPlayers(ctx.Sender!, pattern, TargetSearchMode.IncludeSelf | TargetSearchMode.NoBots, StringComparison.OrdinalIgnoreCase)
-            .Where(p => !p.IsFakeClient)
-            .ToArray();
+        var pattern = string.Join(' ', targetArgs);
+        var match = TargetResolver.Resolve(_core, ctx.Sender, pattern);
 
-        if (matches.Length == 0) ctx.Reply(_core.Localizer["admin.no_target", pattern]);
+        if (match.Outcome != TargetResolver.Outcome.Found)
+        {
+            var key = match.Outcome == TargetResolver.Outcome.Ambiguous ? "admin.ambiguous_target" : "admin.no_target";
+            ctx.Reply(_core.Localizer[key, pattern]);
+            return [];
+        }
 
-        return matches;
+        var records = new List<PlayerRecord>(match.Players.Count);
+
+        foreach (var player in match.Players)
+        {
+            if (_registry.BySlot(player.Slot) is { } record) records.Add(record);
+            else ctx.Reply(_core.Localizer["admin.not_loaded", player.Name]);
+        }
+
+        return records;
     }
 
     private enum AdjustMode

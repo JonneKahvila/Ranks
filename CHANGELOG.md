@@ -32,6 +32,11 @@ Notable changes to Ranks, newest first.
   instead of adding to them: changing `myrank` used to keep `!myrank` registered, and replacing
   `@ranks/vip` still granted VIP to it. Check both files if you edited either list.
 - Includes `Ranks_WeaponStats` 1.0.2, which fixes the same alias problem for `!ws`.
+- `!setpoints`, `!givepoints`, `!removepoints` and `!resetrank` now find their target: every
+  correctly typed command was answered with a usage message. The target is a name, a SteamID
+  or the player's id from `status`, and can be someone spectating or still picking a team.
+- A partial name that matches several players is refused instead of changing all of them.
+  Type more of the name, or use the SteamID or `status` id.
 
 ## [1.0.4] - 2026-11-04
 
