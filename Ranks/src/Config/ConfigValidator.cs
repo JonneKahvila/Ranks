@@ -64,6 +64,7 @@ internal static partial class ConfigValidator
     {
         database.SaveIntervalSeconds = AtLeast(database.SaveIntervalSeconds, 1, "Database.SaveIntervalSeconds", logger);
         database.PurgeDays = AtLeast(database.PurgeDays, 0, "Database.PurgeDays", logger);
+        database.VirtualPurgeDays = AtLeast(database.VirtualPurgeDays, 0, "Database.VirtualPurgeDays", logger);
         database.MaintenanceIntervalHours =
             AtLeast(database.MaintenanceIntervalHours, 0, "Database.MaintenanceIntervalHours", logger);
     }

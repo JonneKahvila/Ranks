@@ -39,6 +39,9 @@ internal sealed class PlayerSessions
     /// could only ever suppress a run that is already the default behaviour.</remarks>
     private DateTime _lastMaintenance = DateTime.MinValue;
 
+    /// <remarks>Written only on the game thread, by initialization and rollover; read from anywhere.</remarks>
+    private long _activePeriod;
+
     private CancellationTokenSource? _saveTimer;
 
     public PlayerSessions(
@@ -63,6 +66,85 @@ internal sealed class PlayerSessions
 
     /// <summary>True once the schema probe has run; false disables every write.</summary>
     public bool SchemaUsable { get; set; } = true;
+
+    /// <summary>The period every resident record is in, and every new record starts in (FR-DB-10).</summary>
+    public long ActivePeriod => Volatile.Read(ref _activePeriod);
+
+    public bool PeriodsEnabled => _config.Current.Database.VirtualPurgeDays > 0;
+
+    public DateTime? ActivePeriodEndsAt =>
+        _config.Current.Database.VirtualPurgeDays is > 0 and var days ? PeriodClock.EndOf(ActivePeriod, days) : null;
+
+    /// <summary>Settles the period before anyone is tracked. False when it cannot be known.</summary>
+    /// <remarks>
+    /// Resumes the newest period the data holds whenever the grid would answer an earlier one —
+    /// with periods off, so switching them off never starts a period, and after
+    /// <c>VirtualPurgeDays</c> changed, so a period id never goes backwards. A failure must not
+    /// guess: every row on a later period than the guess would be closed and reset on its owner's
+    /// next load, which is a virtual purge nobody asked for.
+    /// </remarks>
+    public bool TryInitializePeriod()
+    {
+        var days = _config.Current.Database.VirtualPurgeDays;
+
+        try
+        {
+            var latest = _store.LatestPeriod();
+            var period = days > 0 ? Math.Max(PeriodClock.PeriodFor(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), days), latest) : latest;
+
+            Volatile.Write(ref _activePeriod, period);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ranks: could not read the current period; nothing will be recorded until the next restart.");
+            return false;
+        }
+    }
+
+    /// <summary>Moves every resident record into the due period once a boundary has passed.</summary>
+    /// <remarks>
+    /// Game thread only — it rewrites records gameplay mutates. Runs at round end and on the save
+    /// timer, so a server whose rounds never end still turns over within one save interval. With
+    /// periods off nothing is ever due, which freezes the period rather than starting a new one.
+    /// <para>
+    /// Only a <em>later</em> grid period is due. After <c>VirtualPurgeDays</c> changes, the new
+    /// grid's current block can start before the active period did; waiting for its next boundary
+    /// keeps period ids rising, which every older-or-newer comparison here and in modules relies on.
+    /// </para>
+    /// </remarks>
+    public void RollOverIfDue()
+    {
+        if (!SchemaUsable) return;
+
+        var days = _config.Current.Database.VirtualPurgeDays;
+        if (days <= 0) return;
+
+        var closed = ActivePeriod;
+        var due = PeriodClock.PeriodFor(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), days);
+        if (due <= closed) return;
+
+        Volatile.Write(ref _activePeriod, due);
+
+        var startPoints = _config.Current.Rank.StartPoints;
+        var rankIndex = _ladder.IndexFor(startPoints);
+        var moved = 0;
+
+        foreach (var record in _registry.All)
+        {
+            if (record.Period == due) continue;
+
+            record.StartPeriod(due, startPoints, rankIndex);
+            moved++;
+        }
+
+        _logger.LogInformation(
+            "Ranks: period {Closed} closed and {Opened} opened; {Count} resident record(s) moved into it.",
+            closed, due, moved);
+
+        _events.RaisePeriodChanged(new RanksPeriodChangedArgs(closed, due));
+        _ = SaveAllAsync();
+    }
 
     public void Start(bool hotReload)
     {
@@ -96,7 +178,11 @@ internal sealed class PlayerSessions
 
         // RepeatBySeconds fires its first callback immediately, so the flag check inside
         // SaveAllAsync is what stops a save racing the schema probe at boot.
-        _saveTimer = _core.Scheduler.RepeatBySeconds(interval, () => _ = SaveAllAsync());
+        _saveTimer = _core.Scheduler.RepeatBySeconds(interval, () =>
+        {
+            RollOverIfDue();
+            _ = SaveAllAsync();
+        });
     }
 
     private void OnSteamAuthorized(IOnClientSteamAuthorizeEvent e)
@@ -141,11 +227,14 @@ internal sealed class PlayerSessions
 
         if (!_loading.TryAdd(steamId, 0)) return;
 
+        var period = ActivePeriod;
+        var startPoints = _config.Current.Rank.StartPoints;
+
         Task.Run(() =>
         {
             try
             {
-                var loaded = _store.Load(steamId) ?? NewRecord(steamId, name);
+                var loaded = _store.Load(steamId, period, startPoints) ?? NewRecord(steamId, name, period);
 
                 _core.Scheduler.NextTick(() =>
                 {
@@ -195,6 +284,8 @@ internal sealed class PlayerSessions
 
     private void Publish(ulong steamId, int slot, string name, PlayerRecord loaded)
     {
+        AlignPeriod(loaded);
+
         loaded.Name = name;
         loaded.LastSeen = DateTime.UtcNow;
         loaded.RankIndex = _ladder.IndexFor(loaded.Points);
@@ -204,6 +295,21 @@ internal sealed class PlayerSessions
 
         _detail.Write("Ranks: loaded {SteamId} with {Points} points.", steamId, record.Points);
         _events.RaisePlayerDataLoaded(Snapshot(record));
+    }
+
+    /// <summary>Brings a record loaded off-thread into the period the server is in now.</summary>
+    /// <remarks>
+    /// A newer stored period means another server sharing the database crossed the boundary first,
+    /// so this one catches up rather than trailing it. An older one means a rollover landed while
+    /// the load was in flight, and the record follows everyone else across.
+    /// </remarks>
+    private void AlignPeriod(PlayerRecord loaded)
+    {
+        if (loaded.Period > ActivePeriod) RollOverIfDue();
+        if (loaded.Period == ActivePeriod) return;
+
+        var startPoints = _config.Current.Rank.StartPoints;
+        loaded.StartPeriod(ActivePeriod, startPoints, _ladder.IndexFor(startPoints));
     }
 
     /// <remarks>
@@ -337,6 +443,8 @@ internal sealed class PlayerSessions
     {
         if (PlayerSnapshotRow.From(record) == written) record.Dirty = false;
 
+        record.SettleArchives(written.Archives);
+
         _events.RaisePlayerDataSaved(Snapshot(record));
 
         if (evictAfter && _registry.BySlot(SlotOf(record.SteamId)) is null && !record.Dirty)
@@ -434,13 +542,15 @@ internal sealed class PlayerSessions
             Headshots = record.Headshots,
             Hits = record.Hits,
             Misses = record.Misses,
+            Period = record.Period,
         };
     }
 
-    private PlayerRecord NewRecord(ulong steamId, string name) => new()
+    private PlayerRecord NewRecord(ulong steamId, string name, long period) => new()
     {
         SteamId = steamId,
         Name = name,
+        Period = period,
         Points = _config.Current.Rank.StartPoints,
         FirstSeen = DateTime.UtcNow,
         LastSeen = DateTime.UtcNow,

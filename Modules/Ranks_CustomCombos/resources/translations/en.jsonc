@@ -21,6 +21,28 @@
   "menu.combos.row": "{0}: {1}",
   "menu.combos.error": "Combo statistics are unavailable right now.",
 
+  // ---- Seasons ------------------------------------------------------------
+  //
+  // Only while Ranks runs seasons (its Database.VirtualPurgeDays is above zero). The combos
+  // screen then opens on this season, with an "All time" row and a "Previous seasons" row above
+  // the list. Worded like Ranks' own season rows, and short: a menu row clips at ~42 characters.
+
+  // {0} is one of the labels below, so a title reads "Combos - This season".
+  "menu.combos.title_in": "Combos - {0}",
+  "menu.combos.current": "This season",
+  "menu.combos.alltime": "All time",
+  "menu.combos.previous": "Previous seasons",
+  // {0} is the season's first day, as yyyy-MM-dd in UTC.
+  "menu.combos.season": "Season from {0}",
+  // Everything recorded before seasons were switched on.
+  "menu.combos.initial": "Before seasons",
+  "menu.combos.empty_current": "No combos landed this season yet.",
+  "menu.combos.empty_season": "No combos landed in that season.",
+  // Shown for "Before seasons": combos are kept per season only from when seasons were switched
+  // on, so the ones landed earlier are in the All time total instead.
+  "menu.combos.empty_initial": "Older combos are counted in All time.",
+  "menu.combos.seasons_empty": "No previous seasons yet.",
+
   // Matching the combos in resources/examples/combos.jsonc.
   "combo.noscope_hs": "{lime}No-scope headshot",
   "combo.wallbang_hs": "{lime}Wallbang headshot",

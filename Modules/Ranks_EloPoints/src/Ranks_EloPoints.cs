@@ -14,7 +14,7 @@ namespace Ranks.EloPoints;
 
 [PluginMetadata(
     Id = "Ranks_EloPoints",
-    Version = "1.0.1",
+    Version = "1.1.0",
     Name = "Ranks EloPoints",
     Author = "Shmitzas",
     Description = "Faceit-style Elo rating for the Ranks plugin. Replaces core scoring.")]
@@ -46,7 +46,7 @@ public sealed class RanksEloPoints : BasePlugin
         _tracker = new MatchTracker(Core, _bridge, _store, _config, _logger);
         _bridge.Tracker = _tracker;
         _bridge.CoreReady += OnRanksReady;
-        _api = new EloPointsApi(Core, _tracker, _logger);
+        _api = new EloPointsApi(Core, _tracker, _bridge, _logger);
         _bridge.PublishedApi = _api;
 
         // Exactly once. Registering twice double-counts every round.

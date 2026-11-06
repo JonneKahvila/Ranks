@@ -14,6 +14,28 @@ Notable changes to Ranks_WeaponStats, newest first.
 
      See .github/instructions/changelog.instructions.md for the full style. -->
 
+## [1.1.0] - 2026-11-06
+
+Requires Ranks 1.1.0. With an older Ranks it keeps working as 1.0.2 did, without seasons
+or resets, and logs a warning saying so.
+
+- Weapon and hit statistics are now kept per season as well as for all time. With core's
+  `Database.VirtualPurgeDays` set, **Weapon stats** and **Overall Hit Stats** open on a choice
+  of **This season**, **All time** and **Previous seasons**. With seasons off both open their
+  lists directly, exactly as before.
+- Per-season figures start with this update. Seasons that closed earlier, and **Before
+  seasons**, show none here; everything recorded before is under **All time**.
+- `!resetrank`, `!resetmyrank` and the reset in the Settings menu now clear weapon statistics
+  too. Before, a reset player kept every weapon and hitbox figure.
+- With seasons on, a reset clears only the current season and takes it off the all-time
+  totals. Past seasons are kept, as they are in Ranks.
+- The first start after updating creates three tables: `ranks_weapon_stats_period`,
+  `ranks_hit_stats_period` and `ranks_weapon_hit_stats_period`. Nothing is written to them
+  while seasons are off, and the existing tables keep their all-time totals.
+- A purge now also removes the purged players' per-season rows.
+- The published API gains overloads that take a season id. The existing calls still return
+  all-time totals.
+
 ## [1.0.2] - 2026-11-05
 
 - Renaming or removing an alias in `commands.jsonc` now takes effect: `"Aliases": ["wstats"]`

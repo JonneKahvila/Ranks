@@ -21,7 +21,7 @@ Prestige levels for the [Ranks](../../README.md) plugin, as a virtual point dedu
 
 ## Requirements
 
-- `Ranks` core installed and loaded
+- `Ranks` 1.1.0 or newer, installed and loaded
 
 No database connection of its own and no tables — the prestige level is derived from the points
 core already stores.
@@ -152,8 +152,9 @@ The module never draws anything. It tells core what to display, and core draws i
 
 **Resolving**
 
-On player load and after every points change, the module asks core for the player's stored total,
-finds the highest level whose `MinimumPoints` it reaches, and subtracts that threshold.
+On player load, after every points change, when core starts a new season and when a player is
+reset, the module asks core for the player's stored total, finds the highest level whose
+`MinimumPoints` it reaches, and subtracts that threshold.
 
 **Displaying**
 
@@ -171,6 +172,8 @@ Points change → resolve level → displayed = points − threshold → core dr
 **Key Mechanics**
 
 - The level is **derived, never stored** — there is nothing to migrate and nothing to get out of sync.
+- With core's `Database.VirtualPurgeDays` set, a new season resets everyone's points, so every
+  prestige restarts with it; past seasons stay in core's leaderboard history.
 - Below the first threshold the overlay is cleared, so an unpromoted player is drawn exactly as core would.
 - Overlays are session-scoped: they vanish on disconnect and on unload.
 - Config reloads re-resolve everyone present immediately.

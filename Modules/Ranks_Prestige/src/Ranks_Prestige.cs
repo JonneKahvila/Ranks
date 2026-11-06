@@ -14,7 +14,7 @@ namespace Ranks.Prestige;
 
 [PluginMetadata(
     Id = "Ranks_Prestige",
-    Version = "1.0.1",
+    Version = "1.1.0",
     Name = "Ranks Prestige",
     Author = "Shmitzas",
     Description = "Virtual point deduction and prestige levels for the Ranks plugin.")]

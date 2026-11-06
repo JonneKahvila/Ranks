@@ -17,7 +17,7 @@ namespace Ranks;
 
 [PluginMetadata(
     Id = "Ranks",
-    Version = "1.0.5",
+    Version = "1.1.0",
     Name = "Ranks",
     Author = "Shmitzas",
     Description = "Extensive ranks and playtime data collection plugin.")]
@@ -26,7 +26,13 @@ public sealed partial class Ranks : BasePlugin
     /// <remarks>Bounded so a hung database cannot hold the server in shutdown indefinitely.</remarks>
     private static readonly TimeSpan UnloadFlushBudget = TimeSpan.FromSeconds(8);
 
-    private static readonly string[] RequiredTables = ["ranks_players", "ranks_settings"];
+    /// <summary>Tables core reads, with the columns a missed migration would leave out.</summary>
+    private static readonly (string Table, string Columns)[] RequiredReads =
+    [
+        ("ranks_players", "steam_id, headshots, hits, misses, period"),
+        ("ranks_settings", "steam_id"),
+        ("ranks_players_history", "steam_id, period"),
+    ];
 
     private ILogger _logger = null!;
     private ConfigHost<RanksConfig> _config = null!;
@@ -81,10 +87,10 @@ public sealed partial class Ranks : BasePlugin
         BuildServices();
 
         var schemaError = MigrateSchema();
-        var status = new SchemaProbe(_database, _tables, _logger).Probe(RequiredTables, schemaError);
-        _sessions.SchemaUsable = status.Usable;
+        var status = new SchemaProbe(_database, _tables, _logger).Probe(RequiredReads, schemaError);
+        _sessions.SchemaUsable = status.Usable && _sessions.TryInitializePeriod();
 
-        if (status.Usable)
+        if (_sessions.SchemaUsable)
         {
             _sessions.Start(hotReload);
             Core.Registrator.Register(_scoring);
@@ -157,7 +163,7 @@ public sealed partial class Ranks : BasePlugin
         _scoreboard = new ScoreboardService(Core, _config, _ladder, _registry, _logger);
         _revealer = new RankRevealer(Core, _config, _detail, _logger);
         _scoring = new ScoringHandlers(Core, _config, _awards, _registry, _detail, _logger);
-        _reset = new PlayerReset(_ladder, _sessions, _scoreboard);
+        _reset = new PlayerReset(_ladder, _sessions, _scoreboard, _events);
         _menuEntries = new MenuEntryRegistry(_logger);
 
         // Before the menus, which read the leaderboard through it. Nothing in the API needs them
@@ -166,7 +172,7 @@ public sealed partial class Ranks : BasePlugin
             _config, _points, _registry, _sessions, _awards, _ladder, _scoreboard,
             _store, _migrator, _menuEntries, _tables, _database, _events, _logger);
 
-        _menus = new RankMenus(Core, _ladder, _registry, _store, _commandsConfig, _reset, _menuEntries, _api, _logger);
+        _menus = new RankMenus(Core, _ladder, _registry, _commandsConfig, _reset, _menuEntries, _api, _logger);
 
         _commands = new CommandRegistry(Core, _commandsConfig, _menus, _registry, _reset, _api, _logger);
 
@@ -175,14 +181,30 @@ public sealed partial class Ranks : BasePlugin
         _events.RankChanged += e => _scoreboard.Apply(e.SteamId);
         _events.RankChanged += e => _revealer.OnRankChanged(e.SteamId);
         _events.PlayerDataLoaded += snapshot => _scoreboard.Apply(snapshot.SteamId);
+        _events.PeriodChanged += _ => OnPeriodChanged();
         _scoring.RoundEnded += OnRoundEnded;
     }
 
     private void OnRoundEnded()
     {
+        _sessions.RollOverIfDue();
         _ = _sessions.SaveAllAsync();
         _ = _sessions.RunMaintenanceAsync(force: false);
         _scoreboard.ApplyAll();
+    }
+
+    /// <summary>Redraws every scoreboard and tells the server the season turned over.</summary>
+    /// <remarks>
+    /// Without the announcement every rank on the server drops at once with nothing to explain it,
+    /// which reads as lost data rather than a new season.
+    /// </remarks>
+    private void OnPeriodChanged()
+    {
+        _scoreboard.ApplyAll();
+
+        foreach (var player in Core.PlayerManager.GetAllPlayers())
+            if (!player.IsFakeClient)
+                Chat.Send(Core, player, "period.started");
     }
 
     /// <remarks>

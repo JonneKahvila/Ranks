@@ -31,19 +31,23 @@ internal sealed class SchemaProbe
     /// Runs unconditionally, even when migrations reported success — that is what turns "an
     /// exception on every player connect" into one line at boot. It opens the connection, so it
     /// must run after the migration runner, which needs an unopened one.
+    /// <para>
+    /// Each entry names the columns to select as well as the table: a column migration a DML-only
+    /// host could not run leaves a readable table that still fails every query naming the column.
+    /// </para>
     /// </remarks>
-    public SchemaStatus Probe(IReadOnlyCollection<string> requiredBaseNames, Exception? schemaError)
+    public SchemaStatus Probe(IReadOnlyCollection<(string BaseName, string Columns)> requiredReads, Exception? schemaError)
     {
         var unusable = new List<string>();
 
         using var connection = _database.Create();
         connection.Open();
 
-        foreach (var baseName in requiredBaseNames)
+        foreach (var (baseName, columns) in requiredReads)
         {
             var table = _tables.Resolve(baseName);
 
-            if (IsReadable(connection, table, out var failure)) continue;
+            if (IsReadable(connection, table, columns, out var failure)) continue;
 
             unusable.Add(table);
             _logger.LogError(failure, "Ranks: table '{Table}' is not readable.", table);
@@ -82,12 +86,12 @@ internal sealed class SchemaProbe
     /// Provider-agnostic and tests readability, which is what the plugin actually needs — better
     /// than an information_schema query, which can succeed on a table the account cannot select.
     /// </remarks>
-    private static bool IsReadable(IDbConnection connection, string table, out Exception? failure)
+    private static bool IsReadable(IDbConnection connection, string table, string columns, out Exception? failure)
     {
         try
         {
             using var command = connection.CreateCommand();
-            command.CommandText = $"SELECT 1 FROM {table} WHERE 1 = 0";
+            command.CommandText = $"SELECT {columns} FROM {table} WHERE 1 = 0";
             command.ExecuteNonQuery();
 
             failure = null;

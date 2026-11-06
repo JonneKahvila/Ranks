@@ -1,8 +1,8 @@
+using System.Globalization;
 using Microsoft.Extensions.Logging;
 using Ranks.Api;
 using Ranks.Config;
 using Ranks.Contract;
-using Ranks.Database;
 using Ranks.Players;
 using Ranks.Ranking;
 using SwiftlyS2.Shared;
@@ -33,7 +33,6 @@ internal sealed class RankMenus
     private readonly ISwiftlyCore _core;
     private readonly RankLadder _ladder;
     private readonly PlayerRegistry _registry;
-    private readonly PlayerStore _store;
     private readonly ConfigHost<CommandsConfig> _commands;
     private readonly PlayerReset _reset;
     private readonly MenuEntryRegistry _entries;
@@ -44,7 +43,6 @@ internal sealed class RankMenus
         ISwiftlyCore core,
         RankLadder ladder,
         PlayerRegistry registry,
-        PlayerStore store,
         ConfigHost<CommandsConfig> commands,
         PlayerReset reset,
         MenuEntryRegistry entries,
@@ -54,7 +52,6 @@ internal sealed class RankMenus
         _core = core;
         _ladder = ladder;
         _registry = registry;
-        _store = store;
         _commands = commands;
         _reset = reset;
         _entries = entries;
@@ -77,7 +74,7 @@ internal sealed class RankMenus
             .WithItemsPerPage(8)
             .Add(new SubmenuComponent(_core.Localizer["menu.root.rank"], _ => BuildMyRank(player)))
             .Add(new SubmenuComponent(_core.Localizer["menu.root.stats"], _ => BuildStatistics(player)))
-            .Add(new SubmenuComponent(_core.Localizer["menu.root.top"], _ => BuildTop()))
+            .Add(new SubmenuComponent(_core.Localizer["menu.root.top"], _ => BuildTop(player)))
             .Add(new SubmenuComponent(_core.Localizer["menu.root.settings"], _ => BuildSettings(player)))
             .Add(new ButtonComponent(_core.Localizer["menu.root.help"], ctx =>
             {
@@ -107,7 +104,7 @@ internal sealed class RankMenus
 
     public void OpenLadder(IPlayer player) => BuildLadder(player).Open(player);
 
-    public void OpenTop(IPlayer player) => BuildTop().Open(player);
+    public void OpenTop(IPlayer player) => BuildTop(player).Open(player);
 
     /// <remarks>Chat, not a menu: there is no record to render and the player needs to know why.</remarks>
     private bool Loaded(IPlayer player)
@@ -168,15 +165,28 @@ internal sealed class RankMenus
     // ---- Statistics ----------------------------------------------------------
 
     /// <summary>Core's own counters, plus one row per module registered under this section.</summary>
+    /// <remarks>With periods enabled the main row is this period's, so all time and past periods get rows of their own.</remarks>
     private IMenu? BuildStatistics(IPlayer player)
     {
         if (_registry.BySlot(player.Slot) is null) return null;
+
+        var steamId = player.SteamID;
+        var periods = _api.ArePeriodsEnabled;
 
         var builder = _core.Menu.CreateMenu("ranks.stats")
             .WithTitle(_core.Localizer["menu.stats.title"])
             .AddHeader(new DividerComponent())
             .WithItemsPerPage(8)
-            .Add(new SubmenuComponent(_core.Localizer["menu.stats.main"], _ => BuildMainStats(player)));
+            .Add(new SubmenuComponent(_core.Localizer[periods ? "menu.stats.current" : "menu.stats.main"], _ => BuildMainStats(player)));
+
+        if (periods)
+        {
+            builder
+                .Add(new SubmenuComponent(_core.Localizer["menu.stats.alltime"], _ =>
+                    BuildSnapshotStats("ranks.stats.period", _core.Localizer["menu.stats.alltime"], steamId, RanksPeriods.AllTime)))
+                .Add(new SubmenuComponent(_core.Localizer["menu.stats.previous"], _ =>
+                    BuildPeriodPicker((period, label) => BuildSnapshotStats("ranks.stats.period", label, steamId, period))));
+        }
 
         var entries = _entries.For(RanksMenuSections.Statistics);
 
@@ -190,23 +200,27 @@ internal sealed class RankMenus
         return builder.AddFooter(new DividerComponent()).Build();
     }
 
+    /// <remarks>
+    /// Keeps the <c>ranks.stats.main</c> id for the period the player is in now: a renderer drawing
+    /// that page reads the player's live snapshot, which is exactly this period's figures.
+    /// </remarks>
     private IMenu? BuildMainStats(IPlayer player)
     {
-        if (_registry.BySlot(player.Slot) is not { } record) return null;
+        if (_api.GetSnapshot(player) is not { } snapshot) return null;
 
         var builder = _core.Menu.CreateMenu("ranks.stats.main")
-            .WithTitle(_core.Localizer["menu.stats.main_title"])
+            .WithTitle(_core.Localizer[_api.ArePeriodsEnabled ? "menu.stats.current" : "menu.stats.main_title"])
             .AddHeader(new DividerComponent())
             .WithItemsPerPage(9);
 
-        foreach (var line in StatLines(record))
+        foreach (var line in StatLines(snapshot))
             builder.Add(new TextComponent(line));
 
         return builder.AddFooter(new DividerComponent()).Build();
     }
 
     /// <summary>The counter lines, shared so a player's own menu and a leaderboard pick agree.</summary>
-    private List<string> StatLines(PlayerRecord record)
+    private List<string> StatLines(RanksPlayerSnapshot record)
     {
         var kd = record.Deaths == 0 ? record.Kills : Math.Round(record.Kills / (double)record.Deaths, 2);
         var headshotRate = record.Kills == 0 ? 0 : Math.Round(record.Headshots * 100.0 / record.Kills, 1);
@@ -232,22 +246,67 @@ internal sealed class RankMenus
 
     // ---- Leaderboard ---------------------------------------------------------
 
-    /// <summary>Paging is the component's job, so nothing here hand-rolls it.</summary>
+    /// <summary>The Leaderboard row: core's list itself, or a screen of lists once there is more than one.</summary>
+    /// <remarks>
+    /// Opens the list directly while periods are off and no module hangs a board here, so a server
+    /// with neither sees exactly the screen it always did.
+    /// </remarks>
+    private IMenu BuildTop(IPlayer player)
+    {
+        var entries = _entries.For(RanksMenuSections.Leaderboard);
+        var periods = _api.ArePeriodsEnabled;
+
+        if (!periods && entries.Count == 0) return BuildTopList(_api.CurrentPeriod, _core.Localizer["menu.top.title"]);
+
+        var builder = _core.Menu.CreateMenu("ranks.top.sections")
+            .WithTitle(_core.Localizer["menu.top.title"])
+            .AddHeader(new DividerComponent())
+            .WithItemsPerPage(8);
+
+        if (periods)
+        {
+            if (_api.CurrentPeriodEndsAt is { } endsAt)
+                builder.Add(new TextComponent(_core.Localizer["menu.period.ends", Stamp(endsAt)]));
+
+            builder
+                .Add(new SubmenuComponent(_core.Localizer["menu.top.current"], _ =>
+                    BuildTopList(_api.CurrentPeriod, _core.Localizer["menu.top.current"])))
+                .Add(new SubmenuComponent(_core.Localizer["menu.top.alltime"], _ =>
+                    BuildTopList(RanksPeriods.AllTime, _core.Localizer["menu.top.alltime"])))
+                .Add(new SubmenuComponent(_core.Localizer["menu.top.previous"], _ => BuildPeriodPicker(BuildTopList)));
+        }
+        else
+        {
+            builder.Add(new SubmenuComponent(_core.Localizer["menu.top.players"], _ =>
+                BuildTopList(_api.CurrentPeriod, _core.Localizer["menu.top.title"])));
+        }
+
+        foreach (var (moduleId, entry) in entries)
+            builder.Add(new SubmenuComponent(entry.Label, _ => _entries.Build(moduleId, entry, player)));
+
+        return builder.AddFooter(new DividerComponent()).Build();
+    }
+
+    /// <summary>One period's leaderboard, or all time. Paging is the component's job, so nothing here hand-rolls it.</summary>
     /// <remarks>
     /// The item type is the row, never <c>IMenuComponent</c>: the component renders each item
     /// through <c>Formatter</c>, whose default is <c>ToString()</c> — so a component as the item
     /// draws its own type name.
+    /// <para>
+    /// Every variant keeps the <c>ranks.top</c> id: a renderer drawing that page reads the figures
+    /// off the rows, so it is right for any period without knowing which one it shows.
+    /// </para>
     /// </remarks>
-    private IMenu BuildTop() =>
+    private IMenu BuildTopList(long period, string title) =>
         _core.Menu.CreateMenu("ranks.top")
-            .WithTitle(_core.Localizer["menu.top.title"])
+            .WithTitle(title)
             .AddHeader(new DividerComponent())
             .WithItemsPerPage(10)
             .Add(new PagedCollectionComponent<RanksLeaderboardEntry>(async () =>
             {
                 try
                 {
-                    return await _api.GetTopAsync("points", 50).ConfigureAwait(false);
+                    return await _api.GetTopAsync("points", 50, period).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -261,7 +320,7 @@ internal sealed class RankMenus
                 ItemHint = _ => _core.Localizer["menu.top.hint"],
                 OnItemSelected = ctx =>
                 {
-                    var child = BuildPlayerStats(ctx.Item.SteamId, ctx.Item.Name);
+                    var child = BuildPlayerStats(ctx.Item.SteamId, ctx.Item.Name, period);
 
                     // Set explicitly: adoption only happens for a menu a SubmenuComponent opens,
                     // and this one is opened from a row handler, so without it the back key would
@@ -275,34 +334,44 @@ internal sealed class RankMenus
             .AddFooter(new DividerComponent())
             .Build();
 
-    /// <summary>Another player's counters, opened from a leaderboard row.</summary>
+    /// <summary>Another player's counters, opened from a leaderboard row, for the period that board shows.</summary>
     /// <remarks>
-    /// Paged rather than plain text because the record has to be fetched: a listed player is
-    /// usually offline, so the resident registry has nothing and the row comes from the database.
-    /// <c>PagedCollectionComponent</c> is what owns that load, its thread and its failure text.
+    /// <c>ranks.top.player</c> is kept for the current period only: a renderer drawing that page
+    /// loads the player's current snapshot itself, which would put this period's numbers over a
+    /// past board's pick.
+    /// </remarks>
+    private IMenu BuildPlayerStats(ulong steamId, string name, long period) =>
+        BuildSnapshotStats(
+            period == _api.CurrentPeriod ? "ranks.top.player" : "ranks.top.player.period",
+            _core.Localizer["menu.playerstats.title", name],
+            steamId,
+            period);
+
+    /// <summary>A player's counters for one period, or all time.</summary>
+    /// <remarks>
+    /// Paged rather than plain text because the figures have to be fetched: a listed player is
+    /// usually offline, and a past period is never resident. <c>PagedCollectionComponent</c> is what
+    /// owns that load, its thread and its failure text.
     ///
     /// Module sections are deliberately absent — a module's menu factory takes the viewing
     /// <c>IPlayer</c>, so it can only ever render the viewer's own numbers (FR-CMD-04).
     /// </remarks>
-    private IMenu BuildPlayerStats(ulong steamId, string name) =>
-        _core.Menu.CreateMenu("ranks.top.player")
-            .WithTitle(_core.Localizer["menu.playerstats.title", name])
+    private IMenu BuildSnapshotStats(string id, string title, ulong steamId, long period) =>
+        _core.Menu.CreateMenu(id)
+            .WithTitle(title)
             .AddHeader(new DividerComponent())
             .WithItemsPerPage(9)
             .Add(new PagedCollectionComponent<string>(async () =>
             {
                 try
                 {
-                    // Resident first so an online player shows the same figures as their own
-                    // menu; the store is the fallback and the only source for anyone offline.
-                    var record = _registry.BySteamId(steamId)
-                                 ?? await Task.Run(() => _store.Load(steamId)).ConfigureAwait(false);
+                    var snapshot = await _api.LoadSnapshotAsync(steamId, period).ConfigureAwait(false);
 
-                    return record is null ? [] : StatLines(record);
+                    return snapshot is null ? [] : StatLines(snapshot);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Ranks: failed to load statistics for {SteamId}.", steamId);
+                    _logger.LogError(ex, "Ranks: failed to load statistics for {SteamId} in period {Period}.", steamId, period);
                     throw;
                 }
             })
@@ -312,6 +381,51 @@ internal sealed class RankMenus
             })
             .AddFooter(new DividerComponent())
             .Build();
+
+    // ---- Periods -------------------------------------------------------------
+
+    /// <summary>Every period but the current one, newest first, each opening <paramref name="build"/> for itself.</summary>
+    private IMenu BuildPeriodPicker(Func<long, string, IMenu> build) =>
+        _core.Menu.CreateMenu("ranks.periods")
+            .WithTitle(_core.Localizer["menu.period.title"])
+            .AddHeader(new DividerComponent())
+            .WithItemsPerPage(8)
+            .Add(new PagedCollectionComponent<long>(async () =>
+            {
+                try
+                {
+                    var current = _api.CurrentPeriod;
+                    var periods = await _api.GetPeriodsAsync().ConfigureAwait(false);
+
+                    return periods.Where(p => p != current).ToArray();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Ranks: failed to list past periods.");
+                    throw;
+                }
+            })
+            {
+                Formatter = PeriodLabel,
+                OnItemSelected = ctx =>
+                {
+                    var child = build(ctx.Item, PeriodLabel(ctx.Item));
+                    child.Parent = ctx.Session.Menu;
+                    child.Open(ctx.Player);
+                },
+                EmptyText = _core.Localizer["menu.period.empty"],
+                FailedText = _core.Localizer["menu.top.error"],
+            })
+            .AddFooter(new DividerComponent())
+            .Build();
+
+    /// <remarks>Dates in invariant ISO form: the day a period starts is the same fact in every locale.</remarks>
+    private string PeriodLabel(long period) =>
+        period == RanksPeriods.Initial
+            ? _core.Localizer["menu.period.initial"]
+            : _core.Localizer["menu.period.row", RanksPeriods.StartOf(period).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)];
+
+    private static string Stamp(DateTime utc) => utc.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
 
     // ---- Settings ------------------------------------------------------------
 

@@ -14,11 +14,15 @@ internal sealed class MatchSession
 {
     public required ulong SteamId { get; init; }
 
-    /// <summary>Resolved from the module's table, else core's points, else StartPoints.</summary>
+    /// <summary>The current period's rating: the module's table, else core's points, else StartPoints.</summary>
     public double Rating;
 
     /// <summary>False until the read lands — an unresolved player is left out of team averages.</summary>
     public bool RatingResolved;
+
+    /// <summary>Bumped whenever the rating is seeded again, so a read begun before that cannot land on top of it.</summary>
+    /// <remarks>A new period and a reset both re-seed; a read still in flight from before either holds the wiped rating.</remarks>
+    public int RatingGeneration;
 
     public int RoundsPresent;
 
@@ -38,4 +42,8 @@ internal sealed class MatchSession
 }
 
 /// <summary>One player's settled rating, handed to the store.</summary>
-internal readonly record struct RatingWrite(ulong SteamId, double Rating, bool Abandoned);
+/// <remarks>
+/// <see cref="Period"/> is captured on the game thread at settle time and travels with the write, so
+/// a retry that lands after a rollover still goes to the period the match was played in (FR-DB-10).
+/// </remarks>
+internal readonly record struct RatingWrite(ulong SteamId, long Period, double Rating, bool Abandoned);

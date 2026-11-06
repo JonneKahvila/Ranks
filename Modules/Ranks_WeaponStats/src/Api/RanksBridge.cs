@@ -47,6 +47,12 @@ internal sealed class RanksBridge
     /// <summary>Raised once core reports ready, so the plugin can run its one-shot checks.</summary>
     public event Action? CoreReady;
 
+    /// <summary>Raised on the game thread when core closes a period, with the id of the one that closed.</summary>
+    public event Action<long>? PeriodClosed;
+
+    /// <summary>Raised on the game thread after core reset a player, with the period it wiped — null while periods are off.</summary>
+    public event Action<ulong, long?>? PlayerReset;
+
     [MethodImpl(MethodImplOptions.NoInlining)]
     public bool TryAcquire(IInterfaceManager interfaceManager)
     {
@@ -95,7 +101,14 @@ internal sealed class RanksBridge
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void Attach(IRanksApi api)
     {
-        _module ??= new WeaponStatsModule(api, _core, _writer, _menus, () => CoreReady?.Invoke());
+        _module ??= new WeaponStatsModule(
+            api,
+            _core,
+            _writer,
+            _menus,
+            () => CoreReady?.Invoke(),
+            closed => PeriodClosed?.Invoke(closed),
+            (steamId, period) => PlayerReset?.Invoke(steamId, period));
 
         ((WeaponStatsModule)_module).Register();
         ((WeaponStatsModule)_module).HandOverMigrations(typeof(RanksBridge).Assembly);
@@ -132,6 +145,19 @@ internal sealed class RanksBridge
     /// <summary>Core's points gate, the fallback for a Ranks that cannot report its play gate.</summary>
     [MethodImpl(MethodImplOptions.NoInlining)]
     public bool? ArePointsEnabled() => _api is IRanksApi api ? api.ArePointsEnabled : null;
+
+    /// <summary>The period a write lands in now: core's current one while periods are on, else null.</summary>
+    /// <remarks>
+    /// Null while they are off even though core still reports a period, because nothing is written
+    /// per period then and a stamp would put counts in a period core is not keeping (FR-DB-10).
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public long? WritePeriod() => _api is IRanksApi { ArePeriodsEnabled: true } api ? api.CurrentPeriod : null;
+
+    /// <summary>Every period holding core data, newest first; empty when core is absent.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public Task<IReadOnlyList<long>> GetPeriodsAsync() =>
+        _api is IRanksApi api ? api.GetPeriodsAsync() : Task.FromResult<IReadOnlyList<long>>([]);
 }
 
 /// <summary>This module's hook into core's lifecycle.</summary>
@@ -144,13 +170,24 @@ internal sealed class WeaponStatsModule : RanksModuleBase
     private readonly Writer _writer;
     private readonly WeaponStatsMenus _menus;
     private readonly Action _onCoreReady;
+    private readonly Action<long> _onPeriodClosed;
+    private readonly Action<ulong, long?> _onPlayerReset;
 
-    public WeaponStatsModule(IRanksApi api, ISwiftlyCore core, Writer writer, WeaponStatsMenus menus, Action onCoreReady)
+    public WeaponStatsModule(
+        IRanksApi api,
+        ISwiftlyCore core,
+        Writer writer,
+        WeaponStatsMenus menus,
+        Action onCoreReady,
+        Action<long> onPeriodClosed,
+        Action<ulong, long?> onPlayerReset)
         : base(api, core)
     {
         _writer = writer;
         _menus = menus;
         _onCoreReady = onCoreReady;
+        _onPeriodClosed = onPeriodClosed;
+        _onPlayerReset = onPlayerReset;
     }
 
     public override string ModuleId => "Ranks_WeaponStats";
@@ -168,7 +205,14 @@ internal sealed class WeaponStatsModule : RanksModuleBase
     /// </remarks>
     protected override void OnCoreReady()
     {
-        _writer.Configure(ConnectionName, Table("ranks_weapon_stats"), Table("ranks_hit_stats"), Table("ranks_weapon_hit_stats"));
+        _writer.Configure(
+            ConnectionName,
+            Table("ranks_weapon_stats"),
+            Table("ranks_hit_stats"),
+            Table("ranks_weapon_hit_stats"),
+            Table("ranks_weapon_stats_period"),
+            Table("ranks_hit_stats_period"),
+            Table("ranks_weapon_hit_stats_period"));
 
         // Labels are resolved from this module's own translation file, because core ships no key
         // for a screen it does not know exists.
@@ -183,4 +227,17 @@ internal sealed class WeaponStatsModule : RanksModuleBase
     /// to look the player up.
     /// </remarks>
     protected override void OnPlayersPurged(IReadOnlyList<ulong> steamIds) => _ = _writer.PurgeAsync(steamIds);
+
+    /// <remarks>
+    /// Hands on <c>OldPeriod</c>: core raises this after <c>CurrentPeriod</c> has moved, so the counts
+    /// still pending were earned in the period that closed (FR-DB-10).
+    /// </remarks>
+    protected override void OnPeriodChanged(RanksPeriodChangedArgs e) => _onPeriodClosed(e.OldPeriod);
+
+    /// <remarks>
+    /// Core wiped the player's current period, which is what this module clears too while periods are
+    /// on. While they are off the module keeps nothing but all time, so all time is what goes.
+    /// </remarks>
+    protected override void OnPlayerReset(RanksPlayerResetArgs e) =>
+        _onPlayerReset(e.SteamId, Api.ArePeriodsEnabled ? Api.CurrentPeriod : null);
 }

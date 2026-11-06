@@ -14,6 +14,15 @@ Notable changes to Ranks_Prestige, newest first.
 
      See .github/instructions/changelog.instructions.md for the full style. -->
 
+## [1.1.0] - 2026-11-06
+
+Requires Ranks 1.1.0.
+
+- Prestige levels restart with each season when core's `Database.VirtualPurgeDays` is set:
+  the level follows the season's points, and past seasons are kept in core's history.
+- The prestige prefix and the rank icon now update the moment `!resetrank` or `!resetmyrank`
+  wipes a player. Before, a reset player kept their old prestige until they scored a point.
+
 ## [1.0.1] - 2026-11-04
 
 - Publishes a read API, `Ranks.Prestige.Api.v1`, with each player's prestige level and the

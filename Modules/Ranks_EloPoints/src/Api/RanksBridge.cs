@@ -34,6 +34,10 @@ internal sealed class RanksBridge
     // JIT hazard rather than only the ones marked NoInlining.
     private object? _api;
     private object? _module;
+    private volatile bool _periodsUnsupported;
+
+    /// <summary>The period every row of an install that never enabled periods sits in.</summary>
+    private const long InitialPeriod = RanksPeriods.Initial;
 
     public RanksBridge(ISwiftlyCore core, RatingStore store, ILogger logger)
     {
@@ -173,6 +177,36 @@ internal sealed class RanksBridge
 
     [MethodImpl(MethodImplOptions.NoInlining)]
     public string? ConnectionName() => _api is IRanksApi api ? api.ConnectionName : null;
+
+    /// <summary>The period core writes to now, or null while core is unavailable.</summary>
+    /// <remarks>
+    /// Names no contract type itself, so any path may call it; the guard is inside. A Ranks older than
+    /// 1.1.0 has no periods and throws MissingMethodException from the read below, which surfaces here;
+    /// from then on this answers period 0, where every row of such an install sits, so the module runs
+    /// exactly as 1.0.1 did. Safe off the game thread: core moves the value only inside its rollover.
+    /// </remarks>
+    public long? CurrentPeriod()
+    {
+        if (!IsAvailable) return null;
+        if (_periodsUnsupported) return InitialPeriod;
+
+        try
+        {
+            return ReadCurrentPeriod();
+        }
+        catch (MissingMethodException)
+        {
+            _periodsUnsupported = true;
+            _logger.LogWarning(
+                "Ranks_EloPoints: this Ranks version has no seasons, so ratings never restart and !resetrank does not " +
+                "clear a rating. Update Ranks to 1.1.0 or newer.");
+
+            return InitialPeriod;
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private long? ReadCurrentPeriod() => _api is IRanksApi api ? api.CurrentPeriod : null;
 }
 
 /// <summary>This module's hook into core's lifecycle.</summary>
@@ -209,14 +243,18 @@ internal sealed class EloPointsModule : RanksModuleBase
     /// </remarks>
     protected override void OnCoreReady()
     {
-        _store.Configure(ConnectionName, Table("ranks_elopoints"));
-        _bridge.PublishedApi?.Configure(ConnectionName, Table("ranks_elopoints"));
+        var table = Table("ranks_elopoints");
+        var history = Table("ranks_elopoints_history");
+
+        _store.Configure(ConnectionName, table, history);
+        _bridge.PublishedApi?.Configure(ConnectionName, table, history);
         _onCoreReady();
     }
 
     /// <remarks>
     /// Two jobs in one handler: capture the match-start counters for a mid-match joiner, and push
-    /// a rating that was settled while the player was already gone back into core.
+    /// a rating that was settled while the player was already gone back into core. Only a rating
+    /// from the current period is pushed — core has just started this player there.
     /// </remarks>
     protected override void OnPlayerDataLoaded(RanksPlayerSnapshot player)
     {
@@ -230,7 +268,9 @@ internal sealed class EloPointsModule : RanksModuleBase
 
         _bridge.Tracker?.OnPlayerDataLoaded(player.SteamId, counters, player.Points);
 
-        if (_store.TryGetCached(player.SteamId, out var rating) && (int)Math.Round(rating) != player.Points)
+        if (_bridge.CurrentPeriod() is { } period
+            && _store.TryGetCached(player.SteamId, period, out var rating)
+            && (int)Math.Round(rating) != player.Points)
             Api.SetPoints(player.SteamId, (int)Math.Round(rating), "elopoints.resync");
     }
 
@@ -239,4 +279,24 @@ internal sealed class EloPointsModule : RanksModuleBase
     /// to look the player up.
     /// </remarks>
     protected override void OnPlayersPurged(IReadOnlyList<ulong> steamIds) => _ = _store.PurgeAsync(steamIds);
+
+    /// <remarks>
+    /// FR-DB-10. Core has already put every resident player back on StartPoints; keeping a rating
+    /// from the closed period would write it straight back over that at the next match end.
+    /// </remarks>
+    protected override void OnPeriodChanged(RanksPeriodChangedArgs e)
+    {
+        _store.ForgetAll();
+        _bridge.Tracker?.OnPeriodChanged(e.NewPeriod);
+    }
+
+    /// <remarks>
+    /// Core has wiped the player's current period. Without this, the next match end writes the
+    /// pre-reset rating, plus that match's result, straight back over the reset.
+    /// </remarks>
+    protected override void OnPlayerReset(RanksPlayerResetArgs e)
+    {
+        _ = _store.ResetAsync(e.SteamId, Api.CurrentPeriod);
+        _bridge.Tracker?.OnPlayerReset(e.SteamId);
+    }
 }

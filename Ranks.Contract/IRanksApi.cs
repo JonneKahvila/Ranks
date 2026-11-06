@@ -171,4 +171,46 @@ public interface IRanksApi
     /// <summary>A player's snapshot online or not: the resident record when there is one, else the stored row.</summary>
     /// <remarks>Null when the player has never been seen. Reads the database for an offline player.</remarks>
     Task<RanksPlayerSnapshot?> LoadSnapshotAsync(ulong steamId);
+
+    // ---- FR-API-13 periods (virtual purge) ------------------------------------
+
+    /// <summary>The period every write lands in now. See <see cref="RanksPeriods"/> for what the id means.</summary>
+    /// <remarks>
+    /// Changes only inside core's rollover, never mid-call, so a module stamping its own rows with it
+    /// agrees with core about which period a write belongs to. While <see cref="ArePeriodsEnabled"/>
+    /// is false it stays on the latest period the data holds — <see cref="RanksPeriods.Initial"/>
+    /// on an install that never enabled them.
+    /// </remarks>
+    long CurrentPeriod { get; }
+
+    /// <summary>True while <c>Database.VirtualPurgeDays</c> is above zero.</summary>
+    bool ArePeriodsEnabled { get; }
+
+    /// <summary>When the current period closes, in UTC, or null while periods are disabled.</summary>
+    DateTime? CurrentPeriodEndsAt { get; }
+
+    /// <summary>Raised once core has rolled every resident record into the new period.</summary>
+    /// <remarks>
+    /// A module holding unwritten counts stamps them with <c>OldPeriod</c>; a module keeping its own
+    /// authoritative value per player (a rating) must drop it here, or its next write restores last
+    /// period's number over core's fresh one.
+    /// </remarks>
+    event Action<RanksPeriodChangedArgs> PeriodChanged;
+
+    /// <summary>Raised after a player's current period was wiped. Past periods are kept.</summary>
+    /// <remarks>A module should clear its current-period figures for the player in the same pass.</remarks>
+    event Action<RanksPlayerResetArgs> PlayerReset;
+
+    /// <summary>Every period holding data, newest first, always including <see cref="CurrentPeriod"/>.</summary>
+    Task<IReadOnlyList<long>> GetPeriodsAsync();
+
+    /// <summary>One period's leaderboard, or every period summed with <see cref="RanksPeriods.AllTime"/>.</summary>
+    /// <remarks>The all-time <c>points</c> figure is what a player would hold had no period ever reset them.</remarks>
+    Task<IReadOnlyList<RanksLeaderboardEntry>> GetTopAsync(string statKey, int limit, long period);
+
+    /// <summary>A player's position in one period, or all time. 0 when they hold no figures there.</summary>
+    Task<int> GetPositionAsync(ulong steamId, string statKey, long period);
+
+    /// <summary>A player's figures for one period, or all time. Null when they hold none there.</summary>
+    Task<RanksPlayerSnapshot?> LoadSnapshotAsync(ulong steamId, long period);
 }

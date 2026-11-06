@@ -60,9 +60,11 @@ ships its own numbers rather than injecting them into core's.
 - A public contract assembly (`Ranks.Api.v1`) covering player data, scoring,
   statistics, leaderboards, lifecycle events, core's point settings, database
   coordination and a module base class.
-- Official sibling module plugins: **WeaponStats**, **PointsHistory**,
-  **WeaponStatsHistory**, the rating module **Ranks_EloPoints** (FR-MOD-05) and
-  the combo module **Ranks_CustomCombos** (FR-MOD-06).
+- Official sibling module plugins: **WeaponStats**, the rating module
+  **Ranks_EloPoints** (FR-MOD-05), the combo module **Ranks_CustomCombos**
+  (FR-MOD-06) and **Ranks_Prestige**. Period history is core's (FR-DB-10), with each
+  module keeping its own figures per period — the separate PointsHistory and
+  WeaponStatsHistory modules once planned here are retired (FR-MOD-02, FR-MOD-03).
 
 
 ### 2.2 Out of scope
@@ -99,7 +101,7 @@ ships its own numbers rather than injecting them into core's.
 flowchart LR
     contract["<b>Ranks.Contract.dll</b><br/>shipped in resources/exports"]
     core["<b>Ranks</b> — core plugin<br/>event registry · point engine<br/>rank ladder · persistence<br/>commands &amp; menus"]
-    mods["<b>Modules</b> — separate plugins<br/>WeaponStats · PointsHistory<br/>WeaponStatsHistory<br/>3rd-party (Deathrun, Surf, …)"]
+    mods["<b>Modules</b> — separate plugins<br/>WeaponStats · EloPoints<br/>CustomCombos · Prestige<br/>3rd-party (Deathrun, Surf, …)"]
     db[("MySQL / MariaDB<br/>PostgreSQL<br/>SQLite")]
 
     contract -. referenced by .-> core
@@ -347,8 +349,8 @@ connect" into one line at boot.
 ### FR-DB-06 — Write semantics
 
 - Writes are **absolute** (the in-memory record is authoritative and overwrites
-  the row), not additive deltas. History and diffing are the PointsHistory
-  module's job, not the core writer's.
+  the row), not additive deltas. History is FR-DB-10's: a closed period is
+  archived whole, never reconstructed from diffs.
 - Every upsert is a **single statement** against a real PK/unique constraint —
   `ON DUPLICATE KEY UPDATE` on MySQL/MariaDB, `ON CONFLICT … DO UPDATE` on
   PostgreSQL/SQLite. "`UPDATE`, then `INSERT` on zero rows affected, catch
@@ -387,16 +389,16 @@ savepoint matters: an unencodable name must skip that one record.
 ### FR-DB-08 — Purge
 
 `Database.PurgeDays` (default `0` = never) deletes `ranks_players` rows whose
-`last_seen` is older than the threshold, cascading to `ranks_settings`. Runs as
-part of the maintenance pass (FR-DB-09).
+`last_seen` is older than the threshold, cascading to `ranks_settings` and
+`ranks_players_history`. Runs as part of the maintenance pass (FR-DB-09).
 
-**Modules must be told.** A purge that sweeps only core's two tables leaves
-`ranks_weapon_stats`, `ranks_points_history` and every third-party table holding
-rows for players that no longer exist — they are keyed on SteamID64, nothing
-joins them back to core, and no later pass will ever collect them. Core raises
-`PlayersPurged` (FR-API-04) with the purged SteamIDs so a module can sweep its
-own tables in the same pass. LVL Ranks exposes `OnDatabaseCleanup` for exactly
-this reason.
+**Modules must be told.** A purge that sweeps only core's tables leaves
+`ranks_weapon_stats`, the modules' per-period tables (FR-DB-10) and every
+third-party table holding rows for players that no longer exist — they are keyed
+on SteamID64, nothing joins them back to core, and no later pass will ever collect
+them. Core raises `PlayersPurged` (FR-API-04) with the purged SteamIDs so a module
+can sweep its own tables in the same pass. LVL Ranks exposes `OnDatabaseCleanup`
+for exactly this reason.
 
 ### FR-DB-09 — When heavy work runs
 
@@ -428,7 +430,67 @@ hours.
 > **Roll-up before prune, in the same pass.** Reversed, a period is pruned before
 > it has been folded into the next tier and the history is silently wrong — the
 > rows are gone and nothing reports a gap. This is the ordering rule for any
-> module implementing FR-MOD-02 / FR-MOD-03 as well as for core's own purge.
+> module that rolls figures up, as well as for core's own purge.
+
+### FR-DB-10 — Virtual purge (seasons)
+
+`Database.VirtualPurgeDays` (default `0` = never) closes the current **period**
+every N days and opens the next: every player's points restart at
+`Rank.StartPoints` and every counter at zero, while the closed period is **kept**,
+not deleted. It answers the monthly-reset request
+([#2](https://github.com/SwiftlyS2-Plugins/Ranks/issues/2)) without a real wipe's
+cost — all-time standings survive because nothing is thrown away. Players see the
+term *season*; the code says *period*.
+
+- **A period id is the Unix time, in seconds, of its UTC start** — an `INT64`,
+  the one timestamp shape every supported engine compares and keys on alike. `0`
+  (`RanksPeriods.Initial`) is everything recorded before periods were enabled.
+- **Boundaries sit on a fixed grid**: N-day blocks counted from Monday 5 January
+  1970 UTC, so a 7-day period starts every Monday. Stateless by design — every
+  server sharing a database derives the same boundaries from the same setting,
+  with nothing stored or coordinated. Servers sharing a database must therefore
+  use the same value.
+- **Core is the only clock.** No module carries a purge or period setting; each
+  follows `CurrentPeriod` and `PeriodChanged` (FR-API-13), so an operator sets this
+  once.
+- **Core storage.** `ranks_players` keeps one row per player, stamped with the
+  `period` it holds; its key and every column modules and importers read are
+  unchanged. A closed period moves to `ranks_players_history`, keyed
+  `(steam_id, period)`. All time is history plus the current row.
+- **Module storage.** A module adding counters writes each delta twice — into its
+  all-time table exactly as before, and into a per-period table keyed by period —
+  so its existing reads keep their meaning. A module holding an authoritative
+  per-player value (EloPoints' rating) archives it the way core does, and must
+  drop it on `PeriodChanged`, or its next write restores last period's value over
+  core's fresh one.
+- **When it turns over.** At round end and on the save timer, so a server whose
+  rounds never end still turns over within `Database.SaveIntervalSeconds`. Every
+  resident record rolls on the game thread: its final figures are queued for
+  history and written in the **same savepoint** as the fresh row, so a crash can
+  never leave a reset without its archive. An offline player's row moves on their
+  next load, in one transaction with its reset — until both land, a past period's
+  board would count that row twice.
+- **Only older rows are closed.** A row on a *newer* period means another server
+  crossed the boundary first; this server catches up rather than archiving that
+  period backwards.
+- **Switching it off freezes the period** rather than starting one: core resumes
+  the newest period the data holds. Switching it on starts the first period at
+  once, with everything before it under "Before seasons".
+- **Period ids only ever rise.** A rollover happens only when the grid's current
+  block starts *after* the active period, and boot resumes the newest stored
+  period when the grid would answer an earlier one. Changing N therefore takes
+  effect at the new grid's next boundary; without that, a new grid whose block
+  started before the active period would hand out a smaller id, and every
+  older-or-newer comparison in core and in modules would read it backwards.
+- **A reset (`!resetrank`, `!resetmyrank`) clears the current period only.** Past
+  periods are history; a past leaderboard does not change because someone reset
+  today. Modules are told through `PlayerReset` (FR-API-13).
+- **A purge (FR-DB-08) still deletes everything** a purged player holds, history
+  included.
+- **All-time points** are what a player would hold had no period reset them: each
+  period's gain over `Rank.StartPoints`, summed, plus the start once.
+
+Menus: FR-CMD-04. API: FR-API-13.
 
 ---
 
@@ -997,8 +1059,10 @@ before touching anything else.
 Saturation (see the warning above) arrives in about a season at this rate: every
 regular reaches Gold and the band stops distinguishing anyone. CS2 has the same
 property and answers it two ways — the rating number keeps rising after the top
-band, and Premier resets every season. **Core has the first and not the second**,
-so the number carries the distinction indefinitely while the colour does not.
+band, and Premier resets every season. **Core has the first always and the second
+on request**: `Database.VirtualPurgeDays` (FR-DB-10) restarts everyone each
+period while keeping the closed one, so the colour distinguishes players again
+without losing the long-run total.
 
 ### FR-RNK-02 — Rank change
 
@@ -1219,6 +1283,19 @@ A module still ships its own command, but as a shortcut to the same menu rather
 than a second surface — `!weaponstats` opens exactly what **Statistics → Weapon
 stats** opens.
 
+**Leaderboard is a section too** (`RanksMenuSections.Leaderboard`). With no entry
+there and periods off, the Leaderboard row still opens core's list directly, so a
+server with neither sees no extra screen. Otherwise it opens a screen of lists:
+core's own — **This season**, **All time** and **Previous seasons** while periods
+are on (FR-DB-10) — followed by every module entry. **Statistics** gains the same
+three views of core's counters while periods are on.
+
+**Renderers key on menu ids**, so an id keeps one meaning: `ranks.top` is any
+leaderboard list (a renderer reads its figures off the rows), while
+`ranks.stats.main` and `ranks.top.player` stay the current period's — a renderer
+fetches those figures itself — and past or all-time variants take ids of their own
+(`ranks.stats.period`, `ranks.top.player.period`).
+
 ### FR-CMD-05 — Translations
 
 Player-facing strings resolve through **`Core.Localizer`**, the server-language
@@ -1326,19 +1403,22 @@ Per-weapon and per-hitbox tracking.
   `ON DUPLICATE KEY UPDATE` silently inserts duplicates forever while
   PostgreSQL and SQLite reject the statement outright.
 
-### FR-MOD-02 — PointsHistory *(official)*
+### FR-MOD-02 — *(retired)*
 
-Periodic snapshots of each player's point total, stored as diffs.
+**PointsHistory was absorbed into core and is no longer a module.** It was to
+snapshot each player's total per day, week or month into a diff table. The request
+it was meant to serve — periodic resets with every past period and an all-time
+view still browsable — needs the reset itself, and only core can reset its own
+records: `SetPoints` reaches resident players only, and a second writer on
+`ranks_players` is what FR-API-09 forbids. Core's virtual purge (FR-DB-10) does
+both, and archives whole periods rather than diffs. The slot keeps its number.
 
-- `Frequency`: `daily` | `weekly` | `monthly`.
-- `Retention`: a count in the frequency's unit, or `0` for unlimited.
-- Table: `ranks_points_history (steam_id, period_start, points_delta, points_total)`.
-- A period with no change writes no row.
+### FR-MOD-03 — *(retired)*
 
-### FR-MOD-03 — WeaponStatsHistory *(official)*
-
-The same snapshot/retention model applied to WeaponStats' counters. Requires
-both `Ranks` and `WeaponStats`; logs and disables itself if either is missing.
+**WeaponStatsHistory was folded into WeaponStats.** Following core's period
+(FR-DB-10) is one more upsert on a write WeaponStats already makes, and a separate
+module would have needed a contract event just to see those deltas. Every module
+now keeps its own figures per period the same way.
 
 ### FR-MOD-04 — *(retired)*
 
@@ -1709,10 +1789,10 @@ wanted to raise one off-thread would be a breaking change, not an optimisation.
 
 **`MaintenanceDue` exists because core is the only thing that knows when the
 server is quiet.** FR-DB-09 already computes "interval elapsed and no humans
-connected" for core's own roll-up and purge; the history modules need exactly
-that gate and cannot compute it better. Without it each one reimplements the
-check and they fire at slightly different moments, so a server gets several
-uncoordinated table scans instead of one quiet window.
+connected" for core's own roll-up and purge; a module with bulk work of its own
+needs exactly that gate and cannot compute it better. Without it each one
+reimplements the check and they fire at slightly different moments, so a server
+gets several uncoordinated table scans instead of one quiet window.
 
 - It fires **after** core's own maintenance completes, so a slow module cannot
   delay core's purge, and the server is still empty when the module runs.
@@ -1992,15 +2072,17 @@ Four semantics are part of the contract, not implementation detail:
 > score** — call `AddPoints` with your own number.
 
 Each member earns its place against a real module: the three database members
-serve WeaponStats, PointsHistory, WeaponStatsHistory and the rating modules;
-`OnPointsChanged` serves PointsHistory; `OnRankChanged` is the one with no
-module left behind it — RevealAllRanks was absorbed into core (FR-SCB-04) — and
+serve WeaponStats, CustomCombos and the rating modules; `OnPointsChanged` serves
+Prestige, whose overlay is derived from the total; `OnRankChanged` is the one with
+no module left behind it — RevealAllRanks was absorbed into core (FR-SCB-04) — and
 stays because the contract is additive-only and a tier crossing is the obvious
 thing a display module hangs off; `OnPlayersPurged` is what stops a module's
-tables orphaning rows when FR-DB-08 purges core's; `OnMaintenanceDue` serves
-**both history modules** — the one that snapshots point totals over time and the
-one that does the same for weapon stats — which need core's quiet window to roll
-up and prune without competing with each other.
+tables orphaning rows when FR-DB-08 purges core's; `OnMaintenanceDue` serves any
+module with bulk work of its own, which needs core's quiet window rather than a
+check of its own. `OnPeriodChanged` and `OnPlayerReset` (FR-API-13) serve every
+official module: the counting ones stamp and clear their per-period figures,
+EloPoints drops the rating core just reset, and Prestige redraws an overlay whose
+points moved without an award.
 
 **What is deliberately absent:** any per-player toggle state, an `AddPoints`
 wrapper (call `Api.AddPoints`), and any scoring hook — a module hooks its own
@@ -2160,6 +2242,44 @@ renderer-specific node in the menu.
   `null` when the player has never been seen, and when the read fails — logged,
   not thrown. It exists because a leaderboard row is usually an offline player,
   whom `GetSnapshot` cannot answer for.
+
+### FR-API-13 — Periods
+
+```csharp
+long CurrentPeriod { get; }                 // Unix seconds of the period's UTC start (FR-DB-10)
+bool ArePeriodsEnabled { get; }             // Database.VirtualPurgeDays > 0
+DateTime? CurrentPeriodEndsAt { get; }      // null while periods are off
+
+event Action<RanksPeriodChangedArgs> PeriodChanged;   // (OldPeriod, NewPeriod)
+event Action<RanksPlayerResetArgs>   PlayerReset;     // (SteamId)
+
+Task<IReadOnlyList<long>> GetPeriodsAsync();          // newest first, current included
+Task<IReadOnlyList<RanksLeaderboardEntry>> GetTopAsync(string statKey, int limit, long period);
+Task<int> GetPositionAsync(ulong steamId, string statKey, long period);
+Task<RanksPlayerSnapshot?> LoadSnapshotAsync(ulong steamId, long period);
+
+static class RanksPeriods { const long Initial = 0; const long AllTime = -1; DateTime StartOf(long); }
+```
+
+What a module needs to keep its own figures per period without a clock of its
+own. Core is the only clock (FR-DB-10), so these are the whole interface to it.
+
+- **`CurrentPeriod` changes only inside core's rollover**, on the game thread, so
+  a module stamping its rows with it agrees with core about which period a write
+  belongs to. While periods are off it stays on the newest period the data holds.
+- **`PeriodChanged` fires after the move.** By then `CurrentPeriod` already
+  answers `NewPeriod`, which is why the payload carries `OldPeriod`: the period a
+  module stamps on counts it was still holding. A module keeping an
+  authoritative value per player must drop it here.
+- **`PlayerReset` fires after core cleared the player's current period.** A
+  module clears the same, and keeps the player's past periods.
+- **The existing reads keep their signatures and now answer for the current
+  period.** With periods off that is the only period, so nothing a caller sees
+  changes. The overloads take a period id or `RanksPeriods.AllTime`; a past or
+  all-time snapshot carries its period on `RanksPlayerSnapshot.Period`.
+- **Additive like every member after 1.0** (FR-API-01). `RanksModuleBase` gains
+  `OnPeriodChanged` and `OnPlayerReset`, subscribed by the same idempotent
+  `Register()`.
 
 ---
 

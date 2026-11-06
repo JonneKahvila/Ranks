@@ -22,6 +22,27 @@ Notable changes to Ranks, newest first.
 
 ---
 
+## [1.1.0] - 2026-11-06
+
+Seasons: optional automatic resets that keep every past season and an all-time board
+([#2](https://github.com/SwiftlyS2-Plugins/Ranks/issues/2)).
+
+- New `Database.VirtualPurgeDays` in `config.jsonc`, `0` (off) by default. Set it to `30` and
+  every 30 days everyone's rank and statistics start over at `Rank.StartPoints`. Nothing is
+  deleted: each finished season is kept, and players are told in chat when a new one starts.
+- `!top` and `!stats` gain "This season", "All time" and "Previous seasons" while seasons are
+  on. The all-time board ranks players as if no season had ever reset them.
+- The first boot adds a `period` column to `ranks_players` and creates `ranks_players_history`.
+  On a host that does not allow schema changes, apply them by hand before upgrading: a missing
+  column is now reported once at boot, and nothing is recorded, instead of every player load failing.
+- Turning seasons on starts the first one immediately; everything recorded before it appears
+  as "Before seasons". Every server sharing one database must use the same value, and a
+  changed value takes effect at its next season boundary.
+- `!resetrank` and `!resetmyrank` now tell modules about the reset, so update all modules with
+  this release: weapon stats, combo counts and Elo ratings are cleared with the rank instead of
+  surviving it. Past seasons are not touched by a reset.
+- `GetPositionAsync` returns `0` for a player with no figures instead of ranking them first.
+
 ## [1.0.5] - 2026-11-04
 
 - New read-only API members for menu renderers and other plugins: the ladder (`GetLadder`),

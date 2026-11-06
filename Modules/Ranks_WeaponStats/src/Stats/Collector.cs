@@ -44,11 +44,19 @@ internal sealed class Collector
     /// </remarks>
     private readonly Func<bool> _isPlayCounted;
 
-    public Collector(ISwiftlyCore core, WeaponStatsConfig config, Func<bool> isPlayCounted, ILogger logger)
+    /// <summary>The period a batch cut now belongs to, or null while core's periods are off.</summary>
+    /// <remarks>
+    /// A delegate for the same reason as <see cref="_isPlayCounted"/>, and its target checks
+    /// <c>RanksBridge.IsAvailable</c> before reaching core. Asked once per cut, never per event.
+    /// </remarks>
+    private readonly Func<long?> _writePeriod;
+
+    public Collector(ISwiftlyCore core, WeaponStatsConfig config, Func<bool> isPlayCounted, Func<long?> writePeriod, ILogger logger)
     {
         _core = core;
         _config = config;
         _isPlayCounted = isPlayCounted;
+        _writePeriod = writePeriod;
         _logger = logger;
     }
 
@@ -67,26 +75,40 @@ internal sealed class Collector
         _slots[player.Slot] = new SessionStats { SteamId = player.SteamID };
     }
 
-    public SessionStats? Release(int slot)
+    /// <summary>Stops tracking a slot and returns its final deltas, stamped with the current period.</summary>
+    /// <remarks>Detaches before clearing the slot, in that order. Game thread only.</remarks>
+    public StatsDelta? Release(int slot)
     {
-        if ((uint)slot >= MaxSlots) return null;
+        if ((uint)slot >= MaxSlots || _slots[slot] is not { } stats) return null;
 
-        var stats = _slots[slot];
+        var delta = stats.Detach(_writePeriod());
         _slots[slot] = null;
 
-        return stats;
+        return delta;
     }
 
-    /// <summary>Detaches every live session's deltas. Game thread only.</summary>
-    public List<StatsDelta> DetachAll()
+    /// <summary>Detaches every live session's deltas, stamped with the current period. Game thread only.</summary>
+    public List<StatsDelta> DetachAll() => DetachAll(_writePeriod());
+
+    /// <summary>Detaches every live session's deltas, stamped with <paramref name="period"/>. Game thread only.</summary>
+    /// <remarks>For a period that has just closed, which core no longer reports as current.</remarks>
+    public List<StatsDelta> DetachAll(long? period)
     {
         var batch = new List<StatsDelta>();
 
         foreach (var session in _slots)
-            if (session?.Detach() is { } delta)
+            if (session?.Detach(period) is { } delta)
                 batch.Add(delta);
 
         return batch;
+    }
+
+    /// <summary>Throws away one player's unwritten deltas, for a reset that must not be undone by them. Game thread only.</summary>
+    public void Discard(ulong steamId)
+    {
+        foreach (var session in _slots)
+            if (session is not null && session.SteamId == steamId)
+                _ = session.Detach(period: null);
     }
 
     /// <summary>Copies one player's unflushed deltas without clearing them. Game thread only.</summary>

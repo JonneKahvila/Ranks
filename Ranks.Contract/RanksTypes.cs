@@ -31,7 +31,36 @@ public sealed record RanksPlayerSnapshot(
     public long Hits { get; init; }
 
     public long Misses { get; init; }
+
+    /// <summary>The period these figures belong to, or <see cref="RanksPeriods.AllTime"/> for a sum over every period.</summary>
+    public long Period { get; init; }
 }
+
+/// <summary>Period ids, as core hands them out (FR-DB-10).</summary>
+/// <remarks>
+/// An id is the Unix time, in seconds, of the period's UTC start — an <c>INT64</c> because that is
+/// the one timestamp shape MySQL, PostgreSQL and SQLite all compare and key on identically.
+/// </remarks>
+public static class RanksPeriods
+{
+    /// <summary>Rows written before virtual purges were ever switched on.</summary>
+    public const long Initial = 0;
+
+    /// <summary>Pass as a period to read every period summed rather than one.</summary>
+    public const long AllTime = -1;
+
+    public static DateTime StartOf(long period) => DateTimeOffset.FromUnixTimeSeconds(period).UtcDateTime;
+}
+
+/// <summary>Raised when core closes one period and opens the next (FR-DB-10).</summary>
+/// <remarks>
+/// <see cref="OldPeriod"/> is what a module stamps on the counts it was still holding, because by
+/// the time this fires <c>CurrentPeriod</c> already answers <see cref="NewPeriod"/>.
+/// </remarks>
+public sealed record RanksPeriodChangedArgs(long OldPeriod, long NewPeriod);
+
+/// <summary>Raised after <c>!resetrank</c>, <c>!resetmyrank</c> or the Settings menu wiped a player's current period.</summary>
+public sealed record RanksPlayerResetArgs(ulong SteamId);
 
 /// <summary>One rung of the operator's ladder.</summary>
 /// <param name="Index">0-based, lowest first — the same index as <see cref="RanksPlayerSnapshot.RankIndex"/>.</param>

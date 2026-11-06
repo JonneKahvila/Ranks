@@ -28,6 +28,7 @@ All of them included in the Ranks plugin. There are also [Modules](#-modules) wh
 
 - 🏆 **Points and ranks** — a configurable ladder, priced per event, with VIP and dynamic multipliers
 - 📊 **Gameplay stats** — kills, deaths, assists, round and match results, bomb plants and defuses
+- 🗓️ **Seasons** — optional: every N days everyone's rank starts over, while past seasons and all-time standings stay browsable
 - 🎖️ **Native scoreboard ranks** — Premier, Competitive, Wingman, or your own icon set, plus rank clan tags
 - 👀 **Everyone's rank, not just yours** — the reveal CS2 sends once per map, re-sent on round start, on join and on rank change
 - 🗄️ **MySQL, MariaDB, PostgreSQL or SQLite** — one connection, shared with every module

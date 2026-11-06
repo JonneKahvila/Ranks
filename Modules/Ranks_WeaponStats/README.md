@@ -8,6 +8,7 @@ Per-weapon and per-hitbox statistics for the [Ranks](../../README.md) plugin.
 
 - 🔫 **Per-weapon totals** - shots, hits, damage, kills, deaths and headshots for every gun
 - 🎯 **Hitbox breakdown** - where your bullets actually land, by hitgroup and per weapon
+- 📅 **Seasons** - with core's seasons on, this season, all time and every past season
 - 📊 **In-game command** - `!weaponstats`, configurable name and permission
 - 🤖 **Bot and friendly-fire switches** - count them or not, per game mode
 - 🔌 **Published API** - other plugins read the same totals
@@ -19,7 +20,8 @@ core's ladder untouched.
 
 ## Requirements
 
-- `Ranks` core installed and loaded
+- `Ranks` 1.1.0 or newer, installed and loaded — an older Ranks still works, but without
+  seasons, and its resets do not reach weapon stats; the module says so once in the log
 - A SwiftlyS2 database connection — the same one core uses, named in **core's**
   `config.jsonc`, not here
 
@@ -46,6 +48,7 @@ The module creates its own tables on that connection and never touches core's.
 
 Name, aliases and permission are editable in `commands.jsonc`. An empty `Command`
 removes the command. It is module-owned and does not appear in core's `!rank` menu.
+With core's seasons on it opens on the same season choice as the menu rows below.
 
 > [!NOTE]
 > **Hitgroup totals have no command.** They are reachable from the menu — **Overall
@@ -141,6 +144,9 @@ SUM(ranks_weapon_stats.kills) per player  ==  ranks_players.kills
 SUM(ranks_weapon_stats.hits)  per player  ==  ranks_players.hits
 ```
 
+With core's seasons on, `ranks_players` holds the current season only, so compare it
+with `ranks_weapon_stats_period` for the current period instead.
+
 Core keeps its own overall `hits`, `misses` and `headshots` on the player row, counted
 from the same events and now gated by the same switch.
 
@@ -185,10 +191,34 @@ Counters flush on the timer, on disconnect, on map change and on unload. Writes 
 instead of overwriting each other, and nothing has to be read back when a player
 connects.
 
+**Seasons**
+
+This module has no season setting of its own: it follows core's
+`Database.VirtualPurgeDays`. While that is above zero, every write lands twice, in the
+same transaction — once in the all-time tables, exactly as before, and once in the
+per-season tables (`ranks_weapon_stats_period`, `ranks_hit_stats_period`,
+`ranks_weapon_hit_stats_period`) under the season it was earned in. When core starts a
+new season, everything not yet written is flushed into the season that just ended.
+While seasons are off nothing is written per season, and the menus are the ones this
+module always had.
+
+Per-season figures start when this version is installed with seasons on. Seasons that
+closed before that, and **Before seasons**, open empty here; those figures are part of
+**All time**.
+
+**Resets and purges**
+
+`!resetrank`, `!resetmyrank` and the reset in core's Settings menu clear weapon
+statistics too. With seasons off they delete the player's all-time rows. With seasons on
+they take the current season's figures off the all-time totals and delete that season's
+rows; past seasons stay, as they do in core. A purge removes everything the player has,
+all time and every season.
+
 **Reading**
 
 `!weaponstats` and the API both merge the stored rows with the caller's unflushed
-session delta, so a figure never lags a flush interval behind what just happened.
+session delta, so a figure never lags a flush interval behind what just happened. A past
+season is read as stored, since nothing still in memory belongs to it.
 `Display.MinShotsToList` shapes the menu only; the API
 returns every row.
 
@@ -206,13 +236,25 @@ type identities, and binding silently stops matching. (The copy beside
 public interface IWeaponStatsApi
 {
     const string InterfaceKey = "Ranks.WeaponStats.Api.v1";
+    const long AllTime = -1;
 
     Task<IReadOnlyList<WeaponStatRow>> GetWeaponsAsync(ulong steamId);
     Task<IReadOnlyList<HitGroupStatRow>> GetHitGroupsAsync(ulong steamId);
     Task<IReadOnlyList<WeaponHitGroupStatRow>> GetWeaponHitGroupsAsync(ulong steamId);
     Task<WeaponStatRow?> GetWeaponAsync(ulong steamId, string weapon);
+
+    Task<IReadOnlyList<WeaponStatRow>> GetWeaponsAsync(ulong steamId, long period);
+    Task<IReadOnlyList<HitGroupStatRow>> GetHitGroupsAsync(ulong steamId, long period);
+    Task<IReadOnlyList<WeaponHitGroupStatRow>> GetWeaponHitGroupsAsync(ulong steamId, long period);
+    Task<WeaponStatRow?> GetWeaponAsync(ulong steamId, string weapon, long period);
 }
 ```
+
+The overloads without a `period` return **all-time** totals, exactly as before seasons
+existed. A `period` is one of core's period ids — `IRanksApi.CurrentPeriod` and
+`GetPeriodsAsync()` hand them out — or `IWeaponStatsApi.AllTime`. A season holds only what
+was recorded while core's seasons were on, and includes the unflushed session delta only
+while it is core's current season.
 
 `GetWeaponHitGroupsAsync` is the same distribution split by weapon — summing its rows
 over weapons reproduces `GetHitGroupsAsync` exactly.
@@ -237,4 +279,6 @@ dense range — `0` through `11` with a hole at `9`.
 | `!weaponstats` disagrees with `!stats`, or nothing is recorded with `Rank.UseCoreRankingLogic` off | Ranks older than 1.0.4, which cannot report its play gate (the log says so once) | Update Ranks |
 | Stats lost after a crash | Flush interval too long | Lower `Database.FlushIntervalSeconds` |
 | No tables created | Core could not reach the database | Check core's connection name and the startup log |
+| A past season shows no weapon stats | It closed before this module's 1.1.0 was installed, or it is **Before seasons** | Expected; those figures are under **All time** |
+| Log: "this Ranks version has no seasons" | Ranks is older than 1.1.0 | Update Ranks. Until then weapon stats work as in 1.0.2: all time only, and resets do not clear them |
 | `!hitstats` does nothing | It does not exist | Hitgroup totals are API-only; see the note under Commands |

@@ -14,6 +14,23 @@ Notable changes to Ranks_CustomCombos, newest first.
 
      See .github/instructions/changelog.instructions.md for the full style. -->
 
+## [1.1.0] - 2026-11-06
+
+Requires Ranks 1.1.0. Worth updating if you run seasons or purge inactive players.
+
+- Combo counts follow Ranks' seasons. With `Database.VirtualPurgeDays` set in Ranks, `!combos`
+  opens this season's counts, with rows for all-time counts and for each previous season.
+- With seasons off, `!combos` and the API show the same lifetime counts as before.
+- Players removed by Ranks' `Database.PurgeDays` now lose their combo counts too. They used to
+  stay in `ranks_combos` for good.
+- Combo rows left behind by earlier purges are deleted on the next server restart.
+- `!resetrank`, `!resetmyrank` and **Settings → Reset my rank** now clear combo counts: every
+  count with seasons off, this season's with seasons on. They used to leave them untouched.
+- First boot creates one table, `ranks_combos_period`. On a host that does not allow schema
+  changes, create it by hand before upgrading — the README lists its columns.
+- New API overloads read one season: `GetCombosAsync` and `GetComboAsync` take a period, and
+  `ICustomCombosApi.AllTime` asks for lifetime counts.
+
 ## [1.0.2] - 2026-11-04
 
 - New API member `GetComboName`: the name `!combos` shows for a combo, so other plugins and

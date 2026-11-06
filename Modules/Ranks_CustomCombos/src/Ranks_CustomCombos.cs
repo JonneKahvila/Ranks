@@ -16,7 +16,7 @@ namespace Ranks.CustomCombos;
 
 [PluginMetadata(
     Id = "Ranks_CustomCombos",
-    Version = "1.0.2",
+    Version = "1.1.0",
     Name = "Ranks CustomCombos",
     Author = "Shmitzas",
     Description = "Operator-defined kill combinations for the Ranks plugin.")]
@@ -34,6 +34,9 @@ public sealed class RanksCustomCombos : BasePlugin
     private CustomCombosApi _api = null!;
     private ComboMenus _menus = null!;
     private bool _contractLoadFailed;
+    private bool _hotReload;
+    private bool _reconciled;
+    private volatile bool _periodsUnsupported;
 
     private CancellationTokenSource? _flushTimer;
 
@@ -43,17 +46,18 @@ public sealed class RanksCustomCombos : BasePlugin
 
     public override void Load(bool hotReload)
     {
+        _hotReload = hotReload;
         _logger = Core.LoggerFactory.CreateLogger("Ranks_CustomCombos");
 
         LoadConfiguration();
 
-        _writer = new Writer(Core, _logger);
+        _writer = new Writer(Core, _logger, () => _config.General.DetailedLogging);
         _counters = new ComboCounters();
 
         var matcher = ComboMatcher.Build(_config, _logger);
 
-        _api = new CustomCombosApi(Core, _writer, _counters, matcher, _logger);
-        _menus = new ComboMenus(Core, _api, _logger);
+        _api = new CustomCombosApi(Core, _writer, _counters, CurrentPeriod, matcher, _logger);
+        _menus = new ComboMenus(Core, _api, CurrentPeriod, ListPeriodsAsync, _logger);
         _commands = new ComboCommands(Core, _menus, _logger);
 
         // The arbiter itself is built inside the bridge: it implements a contract interface, so
@@ -216,6 +220,7 @@ public sealed class RanksCustomCombos : BasePlugin
     private void OnRanksReady()
     {
         _bridge.RefreshBotPolicy();
+        ReconcileOrphansOnce();
 
         if (_config.SuppressCoreAwards)
             _logger.LogInformation(
@@ -243,9 +248,75 @@ public sealed class RanksCustomCombos : BasePlugin
 
     private void FlushNow()
     {
-        var batch = _counters.Drain();
+        var batch = _counters.Drain(CurrentPeriod());
         if (batch.Count == 0) return;
 
         _ = _writer.FlushAsync(batch);
+    }
+
+    /// <summary>The period a count cut now belongs to: core's current one while its periods are on, else null.</summary>
+    /// <remarks>
+    /// Checks <see cref="RanksBridge.IsAvailable"/> first because the flush timer, the published API's
+    /// game-thread peek and the menus all ask, and the bridge member it guards names a contract type
+    /// (FR-DB-10). A Ranks older than 1.1.0 fails that member at JIT and lands in the catch; the module
+    /// then keeps all time only, exactly as it did before periods existed.
+    /// </remarks>
+    private long? CurrentPeriod()
+    {
+        if (!_bridge.IsAvailable || _periodsUnsupported) return null;
+
+        try
+        {
+            return _bridge.CurrentPeriod();
+        }
+        catch (MissingMethodException)
+        {
+            DisablePeriods();
+
+            return null;
+        }
+    }
+
+    /// <summary>Every period core holds, newest first; empty while core is absent or has no periods.</summary>
+    /// <remarks>Guarded like <see cref="CurrentPeriod"/>, so it holds even if it is ever asked first.</remarks>
+    private Task<IReadOnlyList<long>> ListPeriodsAsync()
+    {
+        if (!_bridge.IsAvailable || _periodsUnsupported) return Task.FromResult<IReadOnlyList<long>>([]);
+
+        try
+        {
+            return _bridge.ListPeriodsAsync();
+        }
+        catch (MissingMethodException)
+        {
+            DisablePeriods();
+
+            return Task.FromResult<IReadOnlyList<long>>([]);
+        }
+    }
+
+    /// <summary>Falls back to periods-off behaviour for the rest of this load, against a Ranks that has no periods.</summary>
+    /// <remarks>Ungated by DetailedLogging: it fires once, and it is the only sign that core's seasons are not being followed.</remarks>
+    private void DisablePeriods()
+    {
+        _periodsUnsupported = true;
+        _logger.LogWarning(
+            "Ranks_CustomCombos: this Ranks version has no seasons, so combo counts are kept for all time only " +
+            "and !resetrank does not clear them. Update Ranks to 1.1.0 or newer.");
+    }
+
+    /// <remarks>
+    /// Cold start only, matching the rule that heavy work runs when no player can feel it (FR-DB-09).
+    /// Skipped on hot reload, and skipped when core could not resolve its table — deleting against a
+    /// half-broken schema is worse than leaving orphans.
+    /// </remarks>
+    private void ReconcileOrphansOnce()
+    {
+        if (_reconciled || _hotReload) return;
+
+        _reconciled = true;
+
+        if (_bridge.ResolveTable("ranks_players") is { } playersTable)
+            _ = _writer.ReconcileOrphansAsync(playersTable);
     }
 }

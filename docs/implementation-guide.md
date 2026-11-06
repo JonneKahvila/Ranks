@@ -892,6 +892,32 @@ nothing reports a gap.
 eligible round end rather than being marked done. The whole call is wrapped by
 the caller — a failed purge must not abort `Load`.
 
+### 4.9 Periods (FR-DB-10)
+
+`PeriodClock` maps a moment onto the N-day grid; `PlayerSessions` owns the active
+period; `PlayerStore` owns every period-aware statement. Three rules carry it:
+
+- **The active period moves only on the game thread**, in `RollOverIfDue` (round
+  end, save timer, and a loaded record found on a newer period). Each resident
+  record goes through `PlayerRecord.StartPeriod`, which queues its figures as
+  `PendingArchives` and clears progress through the one `ClearProgress`.
+- **An archive is written with its record, never on its own.** `Save` writes each
+  pending archive into `ranks_players_history` inside the record's savepoint,
+  then the fresh row. `Settle` runs off the game thread, so it clears archives
+  with a compare-and-swap (`SettleArchives`): a rollover replacing the array
+  mid-write keeps what the write never carried, at the cost of one idempotent
+  re-write.
+- **Only an older stored period is stale.** `Load` closes it in one transaction —
+  `INSERT IGNORE`/`ON CONFLICT DO NOTHING` into history, then an `UPDATE` guarded
+  on the stale period — and leaves a newer one alone for the caller to catch up
+  to. Reads that must not write (`ReadCurrent`, snapshots, menus) show a stale row
+  as the fresh record its next load will make.
+
+Verified against MySQL 8.4, MariaDB 11, PostgreSQL 17 and SQLite with a reflection
+harness over the compiled `SchemaMigrator` and `PlayerStore`: upgrade over
+pre-period rows, fresh install with affixes, both archive paths, the conflict and
+newer-period cases, all-time arithmetic and purge.
+
 ---
 
 ## 5. Per-player state
@@ -1508,6 +1534,11 @@ flag the handshake does not reset.
   PostgreSQL and SQLite reject the statement outright.
 - Subscribe to `PlayersPurged` and sweep your own rows (FR-DB-08) — nothing else
   ever will.
+- Follow core's period (FR-DB-10) rather than keeping a clock: stamp each write
+  with the period captured on the game thread when the figures were earned, flush
+  what you hold with `OldPeriod` in `OnPeriodChanged`, and clear the player's
+  current period in `OnPlayerReset`. Never change an existing table's key to add
+  a period — add a `_period` or `_history` table with the composite key inline.
 
 ---
 

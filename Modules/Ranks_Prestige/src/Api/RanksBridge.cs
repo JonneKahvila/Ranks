@@ -237,6 +237,18 @@ internal sealed class PrestigeModule : RanksModuleBase
         if (Core.PlayerManager.GetPlayerFromSteamId(e.SteamId, allowUnauthorized: false) is { } p) ApplyTo(p);
     }
 
+    /// <remarks>
+    /// Core moves every player's points when a season starts and one player's on a reset, raising
+    /// <c>PointsChanged</c> for neither because neither is an award. Without these the overlay keeps
+    /// showing the old prestige until the player's next point (FR-DB-10).
+    /// </remarks>
+    protected override void OnPeriodChanged(RanksPeriodChangedArgs e) => ApplyEveryone();
+
+    protected override void OnPlayerReset(RanksPlayerResetArgs e)
+    {
+        if (Core.PlayerManager.GetPlayerFromSteamId(e.SteamId, allowUnauthorized: false) is { } p) ApplyTo(p);
+    }
+
     private void ApplyTo(IPlayer player)
     {
         try

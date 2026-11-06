@@ -71,6 +71,10 @@ public abstract class RanksModuleBase
 
     protected virtual void OnMaintenanceDue() { }
 
+    protected virtual void OnPeriodChanged(RanksPeriodChangedArgs e) { }
+
+    protected virtual void OnPlayerReset(RanksPlayerResetArgs e) { }
+
     /// <summary>Subscribes and resolves readiness. Idempotent — call it from <c>Load</c>.</summary>
     /// <remarks>
     /// The guard is what the handshake makes necessary: it re-runs on every plugin load and unload,
@@ -88,6 +92,8 @@ public abstract class RanksModuleBase
         Api.RankChanged += OnRankChanged;
         Api.PlayersPurged += OnPlayersPurged;
         Api.MaintenanceDue += OnMaintenanceDue;
+        Api.PeriodChanged += OnPeriodChanged;
+        Api.PlayerReset += OnPlayerReset;
 
         if (Api.IsCoreReady) RaiseCoreReady();
         else Api.CoreReady += RaiseCoreReady;
@@ -106,6 +112,8 @@ public abstract class RanksModuleBase
         Api.RankChanged -= OnRankChanged;
         Api.PlayersPurged -= OnPlayersPurged;
         Api.MaintenanceDue -= OnMaintenanceDue;
+        Api.PeriodChanged -= OnPeriodChanged;
+        Api.PlayerReset -= OnPlayerReset;
         Api.CoreReady -= RaiseCoreReady;
 
         // Unconditional: an entry left behind is a delegate into an assembly that is about to go.

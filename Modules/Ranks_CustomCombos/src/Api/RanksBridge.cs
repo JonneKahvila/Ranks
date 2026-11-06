@@ -132,7 +132,7 @@ internal sealed class RanksBridge
     [MethodImpl(MethodImplOptions.NoInlining)]
     private void Attach(IRanksApi api)
     {
-        _module ??= new CustomCombosModule(api, _core, _writer, _menus, () => CoreReady?.Invoke());
+        _module ??= new CustomCombosModule(api, _core, _writer, _counters, _menus, () => CoreReady?.Invoke());
 
         // Constructed here rather than in the plugin's Load: ComboArbiter implements a contract
         // interface, so merely naming it outside an isolated method would resolve Ranks.Contract
@@ -179,6 +179,24 @@ internal sealed class RanksBridge
     [MethodImpl(MethodImplOptions.NoInlining)]
     private bool ReadPointsGate() => _api is IRanksApi api && api.ArePointsEnabled;
 
+    /// <summary>Core's current period while it runs periods; null while they are off or core is absent.</summary>
+    /// <remarks>
+    /// The stamp a count cut now carries (FR-DB-10). Throws MissingMethodException against a Ranks older
+    /// than 1.1.0; the plugin catches it, and a caller on an event path checks <see cref="IsAvailable"/> first.
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public long? CurrentPeriod() => _api is IRanksApi { ArePeriodsEnabled: true } api ? api.CurrentPeriod : null;
+
+    /// <summary>Every period core holds, newest first; empty while core is absent.</summary>
+    /// <remarks>Throws MissingMethodException against a Ranks older than 1.1.0; the plugin catches it.</remarks>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public Task<IReadOnlyList<long>> ListPeriodsAsync() =>
+        _api is IRanksApi api ? api.GetPeriodsAsync() : Task.FromResult<IReadOnlyList<long>>([]);
+
+    /// <summary>The core table this module reconciles orphans against.</summary>
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public string? ResolveTable(string baseName) => _api is IRanksApi api ? api.ResolveTableName(baseName) : null;
+
     [MethodImpl(MethodImplOptions.NoInlining)]
     public void Unwire()
     {
@@ -199,13 +217,15 @@ internal sealed class RanksBridge
 internal sealed class CustomCombosModule : RanksModuleBase
 {
     private readonly Writer _writer;
+    private readonly ComboCounters _counters;
     private readonly ComboMenus _menus;
     private readonly Action _onCoreReady;
 
-    public CustomCombosModule(IRanksApi api, ISwiftlyCore core, Writer writer, ComboMenus menus, Action onCoreReady)
+    public CustomCombosModule(IRanksApi api, ISwiftlyCore core, Writer writer, ComboCounters counters, ComboMenus menus, Action onCoreReady)
         : base(api, core)
     {
         _writer = writer;
+        _counters = counters;
         _menus = menus;
         _onCoreReady = onCoreReady;
     }
@@ -217,7 +237,7 @@ internal sealed class CustomCombosModule : RanksModuleBase
 
     protected override void OnCoreReady()
     {
-        _writer.Configure(ConnectionName, Table("ranks_combos"));
+        _writer.Configure(ConnectionName, Table("ranks_combos"), Table("ranks_combos_period"));
 
         // The label is this module's own translation — core ships no key for a screen it does not
         // know exists.
@@ -225,6 +245,29 @@ internal sealed class CustomCombosModule : RanksModuleBase
 
         _onCoreReady();
     }
+
+    /// <remarks>
+    /// Cut at once and stamped with the old period: <c>CurrentPeriod</c> already answers the new one,
+    /// and every count still held was earned before the boundary (FR-DB-10).
+    /// </remarks>
+    protected override void OnPeriodChanged(RanksPeriodChangedArgs e) => _ = _writer.FlushAsync(_counters.Drain(e.OldPeriod));
+
+    /// <remarks>
+    /// Core wiped only the current period, so with periods on only that period's counts go and past
+    /// periods stay, as they do in core. The unflushed counts are dropped here, on the game thread
+    /// that owns them; the writer's queue orders the rest after any write already under way.
+    /// </remarks>
+    protected override void OnPlayerReset(RanksPlayerResetArgs e)
+    {
+        _counters.Discard(e.SteamId);
+        _ = _writer.ResetAsync(e.SteamId, Api.ArePeriodsEnabled ? Api.CurrentPeriod : null);
+    }
+
+    /// <remarks>
+    /// Core has already removed its own rows by the time this fires, so the module must not expect
+    /// to look the player up (FR-DB-08).
+    /// </remarks>
+    protected override void OnPlayersPurged(IReadOnlyList<ulong> steamIds) => _ = _writer.PurgeAsync(steamIds);
 }
 
 /// <summary>Answers core's per-kill question (FR-API-11).</summary>

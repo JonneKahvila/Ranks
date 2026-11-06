@@ -55,6 +55,13 @@ public sealed class DatabaseOptions
     public int PurgeDays { get; set; } = 0;
 
     /// <remarks>
+    /// <c>0</c> never starts a new period. Above zero, standings restart at <c>Rank.StartPoints</c>
+    /// every N days on a fixed UTC grid and the closed period is kept as history, not deleted
+    /// (FR-DB-10). Every server sharing a database must use the same value.
+    /// </remarks>
+    public int VirtualPurgeDays { get; set; } = 0;
+
+    /// <remarks>
     /// <c>0</c> runs roll-up and purge only on a cold load. Above zero, they also run on an
     /// empty server once the interval has elapsed (FR-DB-09).
     /// </remarks>

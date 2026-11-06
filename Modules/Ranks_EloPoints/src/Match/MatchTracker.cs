@@ -32,6 +32,10 @@ internal sealed class MatchTracker
     private bool _settled;
     private bool _playGateUnsupported;
 
+    /// <summary>True once a period boundary cut through the open match: nothing more of it is rated.</summary>
+    /// <remarks>Cleared when that match settles, restarts or the map changes, whichever comes first.</remarks>
+    private bool _voided;
+
     public MatchTracker(ISwiftlyCore core, RanksBridge bridge, RatingStore store, EloConfig config, ILogger logger)
     {
         _core = core;
@@ -64,10 +68,12 @@ internal sealed class MatchTracker
             return;
         }
 
+        if (_bridge.CurrentPeriod() is not { } period) return;
+
         var session = new MatchSession { SteamId = player.SteamID };
         _sessions[player.SteamID] = session;
 
-        ResolveRating(session);
+        ResolveRating(session, period);
     }
 
     /// <summary>Marks a player absent without discarding their accrual.</summary>
@@ -102,6 +108,44 @@ internal sealed class MatchTracker
 
         StartFreshMatch();
         _settled = false;
+        _voided = false;
+    }
+
+    /// <summary>Leaves a match the boundary cut through unrated and re-reads every rating for <paramref name="period"/>.</summary>
+    /// <remarks>
+    /// FR-DB-10. Rounds accrued against last period's ratings cannot be settled into this one, and
+    /// what is left after the boundary is not a whole match. Counters are re-baselined even between
+    /// matches, because core has just zeroed them and an older baseline would score negative play.
+    /// Core can raise this inside its own round_end dispatch, so nothing here reads native state.
+    /// </remarks>
+    public void OnPeriodChanged(long period)
+    {
+        var cutThrough = _sessions.Values.Any(s => s.RoundsPresent > 0);
+
+        if (cutThrough && _config.General.DetailedLogging)
+            _logger.LogInformation("Ranks_EloPoints: period {Period} started mid-match, so the rest of this match is unrated.", period);
+
+        StartFreshMatch();
+        _voided |= cutThrough;
+
+        foreach (var session in _sessions.Values) Reseed(session, period);
+    }
+
+    /// <summary>Starts a reset player over: core's fresh rating, no accrual, a new counter baseline.</summary>
+    /// <remarks>
+    /// Re-seeded in place rather than dropped, because nothing re-adds a session for a player who is
+    /// still connected (see <see cref="StartFreshMatch"/>). The rounds already accrued were measured
+    /// against the rating the reset wiped, so they go too and the player is rated like someone who
+    /// joined at that moment. No read either: the table holds the old row until the queued delete lands.
+    /// </remarks>
+    public void OnPlayerReset(ulong steamId)
+    {
+        if (!_sessions.TryGetValue(steamId, out var session)) return;
+
+        Rebaseline(session);
+        session.RatingGeneration++;
+        session.Rating = StartingRating(steamId);
+        session.RatingResolved = true;
     }
 
     /// <summary>Zeroes every accrual and re-baselines the players still here.</summary>
@@ -126,14 +170,20 @@ internal sealed class MatchTracker
                 continue;
             }
 
-            session.RoundsPresent = 0;
-            session.SumActual = 0;
-            session.SumExpected = 0;
-            session.LastTeam = 0;
-            session.StartCounters = _bridge.IsAvailable ? _bridge.GetCounters(steamId) : null;
+            Rebaseline(session);
         }
 
         _lastRoundsPlayed = 0;
+    }
+
+    /// <summary>Zeroes one session's accrual and re-captures its counter baseline from core.</summary>
+    private void Rebaseline(MatchSession session)
+    {
+        session.RoundsPresent = 0;
+        session.SumActual = 0;
+        session.SumExpected = 0;
+        session.LastTeam = 0;
+        session.StartCounters = _bridge.IsAvailable ? _bridge.GetCounters(session.SteamId) : null;
     }
 
     /// <remarks>
@@ -191,6 +241,8 @@ internal sealed class MatchTracker
         }
 
         _lastRoundsPlayed = match.RoundsPlayed;
+
+        if (_voided) return;
 
         // Exactly the rounds core counted (FR-PTS-03), so no rating moves on play core's statistics
         // left out. An older core cannot say, and gets this module's own warmup check instead.
@@ -255,15 +307,20 @@ internal sealed class MatchTracker
     }
 
     /// <summary>Settles the match once. Idempotent, so the event and the phase backstop may both fire.</summary>
+    /// <remarks>
+    /// Every write carries the period read here, on the game thread, so it lands in the period the
+    /// match was played in however late the store gets to it (FR-DB-10).
+    /// </remarks>
     public void Settle()
     {
         if (!_bridge.IsAvailable) return;
         if (_settled) return;
         _settled = true;
+        _voided = false;
 
         if (_sessions.Count == 0) return;
 
-        if (_bridge.GetSettings() is not { } settings)
+        if (_bridge.GetSettings() is not { } settings || _bridge.CurrentPeriod() is not { } period)
         {
             _logger.LogWarning("Ranks_EloPoints: core settings were unavailable at match end, so {Count} session(s) went unrated.", _sessions.Count);
             StartFreshMatch();
@@ -281,7 +338,7 @@ internal sealed class MatchTracker
             return;
         }
 
-        var rated = _sessions.Values.Where(s => s.RoundsPresent > 0).ToArray();
+        var rated = RatedSessions();
         var scores = rated.Select(ScoreOf).ToArray();
         var writes = new List<RatingWrite>(rated.Length);
         var penalty = _config.Abandon.Penalty;
@@ -295,7 +352,7 @@ internal sealed class MatchTracker
             var matchDelta = EloMath.MatchDelta(inputs);
             var updated = EloMath.Apply(session.Rating, matchDelta, abandoned ? penalty : 0, settings.MinPoints);
 
-            writes.Add(new RatingWrite(session.SteamId, updated, abandoned));
+            writes.Add(new RatingWrite(session.SteamId, period, updated, abandoned));
 
             // Core's points is the display and ladder value; the module's DECIMAL is the rating.
             // Rounded, never truncated: truncation never rounds back, so the error would
@@ -311,6 +368,25 @@ internal sealed class MatchTracker
 
         _ = _store.CommitAsync(writes);
         StartFreshMatch();
+    }
+
+    /// <summary>Every session that played a round and knows its rating; the rest go unrated rather than rated from a guess.</summary>
+    /// <remarks>
+    /// An unresolved session holds either nothing or the rating a new period or a reset just wiped,
+    /// and settling it would write that straight back. Ungated: it means a read never landed in a
+    /// whole match, which is a database problem worth seeing.
+    /// </remarks>
+    private MatchSession[] RatedSessions()
+    {
+        var accrued = _sessions.Values.Where(s => s.RoundsPresent > 0).ToArray();
+        var rated = Array.FindAll(accrued, s => s.RatingResolved);
+
+        if (rated.Length < accrued.Length)
+            _logger.LogWarning(
+                "Ranks_EloPoints: {Count} player(s) went unrated because their stored rating had not loaded by match end.",
+                accrued.Length - rated.Length);
+
+        return rated;
     }
 
     private EloInputs BuildInputs(MatchSession session, int matchRounds, double[] scores, int index, in CoreSettings settings)
@@ -432,16 +508,26 @@ internal sealed class MatchTracker
         return (countT > 0 ? sumT / countT : overall, countCt > 0 ? sumCt / countCt : overall);
     }
 
-    /// <summary>Resolves the stored rating, falling back to core's points and then StartPoints.</summary>
-    private void ResolveRating(MatchSession session) => _ = ResolveRatingAsync(session);
+    /// <summary>Resolves the stored rating for <paramref name="period"/>, falling back to core's points and then StartPoints.</summary>
+    private void ResolveRating(MatchSession session, long period) =>
+        _ = ResolveRatingAsync(session, period, session.RatingGeneration);
 
-    private async Task ResolveRatingAsync(MatchSession session)
+    /// <summary>Forgets a session's rating and resolves it again for <paramref name="period"/>.</summary>
+    private void Reseed(MatchSession session, long period)
+    {
+        session.RatingGeneration++;
+        session.RatingResolved = false;
+
+        ResolveRating(session, period);
+    }
+
+    private async Task ResolveRatingAsync(MatchSession session, long period, int generation)
     {
         double? stored = null;
 
         try
         {
-            stored = await _store.ReadAsync(session.SteamId).ConfigureAwait(false);
+            stored = await _store.ReadAsync(session.SteamId, period).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -450,29 +536,36 @@ internal sealed class MatchTracker
 
         // Back onto the game thread before touching anything: the session, core's API and the
         // registry are all game-thread state, and the continuation runs on the thread pool.
-        _core.Scheduler.NextTick(() => ApplyResolvedRating(session, stored));
+        _core.Scheduler.NextTick(() => ApplyResolvedRating(session, generation, stored));
     }
 
-    private void ApplyResolvedRating(MatchSession session, double? stored)
+    /// <remarks>
+    /// The session may have been cleared by a restart or a map change while the read ran, or seeded
+    /// again by a new period or a reset — a read begun before either holds a rating that no longer
+    /// applies.
+    /// </remarks>
+    private void ApplyResolvedRating(MatchSession session, int generation, double? stored)
     {
-        // The session may have been cleared by a restart or a map change while the read ran.
         if (!_sessions.TryGetValue(session.SteamId, out var live) || !ReferenceEquals(live, session)) return;
-        if (session.RatingResolved) return;
+        if (session.RatingResolved || session.RatingGeneration != generation) return;
 
-        if (stored is { } rating)
-        {
-            session.Rating = rating;
-            session.RatingResolved = true;
-
-            return;
-        }
-
-        // Core's points covers a server migrating from core scoring, where the accumulated total
-        // is the only starting signal there is.
-        var corePoints = _bridge.GetPoints(session.SteamId) ?? 0;
-
-        session.Rating = corePoints > 0 ? corePoints : _bridge.GetSettings()?.StartPoints ?? DefaultStartRating;
+        session.Rating = stored ?? StartingRating(session.SteamId);
         session.RatingResolved = true;
+    }
+
+    /// <summary>The rating a player with none in the current period starts from: core's points, else StartPoints.</summary>
+    /// <remarks>
+    /// Core's points cover a server migrating from core scoring, where the accumulated total is the
+    /// only starting signal there is. After a new period they are StartPoints and after a reset 0, so
+    /// both start the player where a new one starts.
+    /// </remarks>
+    private double StartingRating(ulong steamId)
+    {
+        if (!_bridge.IsAvailable) return DefaultStartRating;
+
+        var corePoints = _bridge.GetPoints(steamId) ?? 0;
+
+        return corePoints > 0 ? corePoints : _bridge.GetSettings()?.StartPoints ?? DefaultStartRating;
     }
 
     private int ResolveMatchRounds()

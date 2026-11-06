@@ -78,6 +78,13 @@ SUM(ranks_weapon_stats.kills)  WHERE steam_id = X  ==  ranks_players.kills  for 
 SUM(ranks_weapon_stats.deaths) WHERE steam_id = X  ==  ranks_players.deaths for X
 ```
 
+**With seasons on (§8), compare like with like.** `ranks_players` then holds only the
+current season, so its counterpart is `ranks_weapon_stats_period` at
+`period = CurrentPeriod`; a closed season compares with its `ranks_players_history`
+row. A reset keeps both sides in step — core zeroes its current season and this module
+clears the same figures (§8.4) — where before 1.1.0 a reset left the module's side
+untouched.
+
 **It holds at the shipped defaults**, because both sides count the same events under
 the same rules — nothing below `MinPlayers` or in an excluded warmup on either (this
 module asks core's play gate rather than judging it), team kills excluded on both
@@ -211,11 +218,16 @@ Two things to carry into implementation:
 | Affixed table names | `ResolveTableName(baseName)` | exists (FR-API-06) |
 | Schema creation | `RegisterMigrations(assembly, pluginId)` | exists (FR-API-06) |
 | Sweep its rows on purge | `PlayersPurged` | exists (FR-API-04) |
+| Which season a count belongs to | `ArePeriodsEnabled`, `CurrentPeriod` | exists (FR-API-13) |
+| Close a season's pending counts | `PeriodChanged` | exists (FR-API-13) |
+| Clear what a reset cleared | `PlayerReset` | exists (FR-API-13) |
+| List past seasons in its menus | `GetPeriodsAsync` | exists (FR-API-13) |
 | Know when to flush | — | **see §6** |
 | Know which thread handlers run on | — | **game thread, guaranteed** (FR-API-04) |
 
 Nothing else. It does not read points, ranks, snapshots or stats from core — it
-is a pure producer that happens to share core's database and purge lifecycle.
+is a pure producer that happens to share core's database, purge lifecycle and
+season clock (§8).
 
 **That makes it the cleanest test of the floor for a table-owning module:** if
 these four members plus a flush signal are enough, the database half of
@@ -227,12 +239,17 @@ these four members plus a flush signal are enough, the database half of
 
 `ranks_weapon_stats`, `ranks_hit_stats` and `ranks_weapon_hit_stats`, all affixed
 via FR-API-06 so they sit alongside core's, all migrated by core against this
-module's ledger (FR-DB-05).
+module's ledger (FR-DB-05). They hold **all-time** totals, and that meaning does not
+change with seasons: CustomHUD and the importer read them as lifetime figures.
+
+Each has a per-season twin with the same columns plus `period BIGINT` —
+`ranks_weapon_stats_period`, `ranks_hit_stats_period` and
+`ranks_weapon_hit_stats_period` — written only while core's seasons are on (§8).
 
 **Each needs a real PK on its natural key** — `(steam_id, weapon)`,
-`(steam_id, hitgroup)` and `(steam_id, weapon, hitgroup)`. Without one, MySQL's
-`ON DUPLICATE KEY UPDATE` silently inserts duplicates forever while PostgreSQL and
-SQLite reject the statement outright.
+`(steam_id, hitgroup)` and `(steam_id, weapon, hitgroup)`, and the same plus
+`period` on the twins. Without one, MySQL's `ON DUPLICATE KEY UPDATE` silently
+inserts duplicates forever while PostgreSQL and SQLite reject the statement outright.
 
 **Only landed hits appear here.** A miss has no hitgroup, so it cannot be a row on
 a table keyed by one — misses are counted per weapon on `ranks_weapon_stats.misses`
@@ -320,3 +337,72 @@ framework one is a maintenance liability with no consumer.
 
 Request 1 was granted as **documentation of existing behaviour**, not new API
 surface — the outcome a module audit should be hoping for.
+
+---
+
+## 8. Seasons (FR-DB-10)
+
+Core's `Database.VirtualPurgeDays` turns on **seasons** — *periods* in the code. This
+module has no season setting of its own: core is the only clock, and the module follows
+`CurrentPeriod`, `PeriodChanged` and `PlayerReset` (FR-API-13). With seasons off it
+behaves exactly as it did before they existed — no per-season writes, the same menus,
+the same API answers.
+
+### 8.1 Storage: written twice
+
+Every delta lands in the all-time tables exactly as before and, while seasons are on,
+again in the per-season twin under the season it was earned in — one transaction, so the
+two can never disagree. The season is stamped when a batch is **cut** on the game thread,
+not when it is written: the retry buffer mixes batches, and one retried after a boundary
+must still land in its own season.
+
+When core closes a season it raises `PeriodChanged` after `CurrentPeriod` has already
+moved on, so the module cuts everything still pending at once and stamps it with the
+**old** period. Nothing earned before the boundary counts in the new season.
+
+Nothing is backfilled. A season holds only what was recorded while seasons were on and
+this version was installed, so **Before seasons** (period `0`) is always empty here —
+those figures are part of all time.
+
+### 8.2 Reading
+
+`period = AllTime (-1)` reads the all-time tables, which is what every pre-existing API
+member still does. Any other value reads that season's rows. The unflushed session delta
+is added to an all-time read, and to a read of the season being written now — never to a
+closed season, and to no season at all while seasons are off.
+
+### 8.3 Menus
+
+While seasons are on, **Weapon stats** and **Overall Hit Stats** open on **This season**,
+**All time** and **Previous seasons** (core's period list without the current one). With
+them off, both open their lists directly.
+
+CustomHUD keys designed pages on menu ids. It draws `weaponstats.weapons` from the rows,
+so every view keeps that id. It fetches all-time figures itself for
+`weaponstats.hitgroups` and `weaponstats.weaponhitgroups`, so those two are all time's
+alone and a season's view is `weaponstats.hitgroups.period` /
+`weaponstats.weaponhitgroups.period`. The choice screens are
+`weaponstats.seasons.weapons` / `weaponstats.seasons.hitgroups`, and the season list is
+`weaponstats.periods`.
+
+### 8.4 Resets
+
+`!resetrank`, `!resetmyrank` and the Settings reset raise `PlayerReset` after core wiped
+the player's current season. The module drops the player's unwritten session delta, then
+clears its own figures:
+
+| Seasons | What is cleared |
+|---|---|
+| off | every all-time row the player has |
+| on | the current season's rows, subtracted from all time (clamped at zero) and then deleted; past seasons stay |
+
+A batch already handed to the writer must not put the old figures back after the delete.
+Every database operation the writer performs runs from one queue, in the order it was
+handed over, so a reset runs after every batch cut before it — and drops the player's
+entries for the wiped season from the retry buffer if one of those batches failed.
+
+### 8.5 Purges
+
+`PlayersPurged` deletes the players from all six tables: a purge takes a player's past
+seasons too, as it does in core (FR-DB-08). The cold-start orphan reconcile (§8 of the
+implementation notes) covers the per-season tables as well.

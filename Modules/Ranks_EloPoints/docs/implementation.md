@@ -33,6 +33,7 @@ Modules/Ranks_EloPoints/
     ├── Api/CoreTypes.cs             # CoreSettings, the flattened view of core's settings
     ├── Config/Config.cs
     ├── Migrations/M202610261200_Rating.cs
+    ├── Migrations/M202611060100_Periods.cs  # period column + ranks_elopoints_history
     ├── Match/MatchTracker.cs        # game-event handlers, match state machine
     ├── Match/MatchSession.cs        # one player's accrual for one match
     ├── Rating/EloMath.cs            # pure, static, no engine types
@@ -115,6 +116,18 @@ prevent.
 **Audit rule:** grep the *field name* (`_api`, `_module`) across the whole
 plugin, not the type name.
 
+**The period is the one accessor that is not `NoInlining`.** `CurrentPeriod()`
+names no contract type itself: it checks `IsAvailable`, then calls the
+`NoInlining` `ReadCurrentPeriod()`. So the tracker, the published API and every
+event path call it without a guard of their own, and it answers `null` while core
+is unavailable. Against a Ranks older than 1.1.0 the inner read throws
+`MissingMethodException`, which surfaces in `CurrentPeriod()`'s frame: it logs one
+warning and answers `0` from then on. Every row of such an install is on period 0,
+so the module behaves exactly as 1.0.1 did. Checked against the 1.0.4 contract:
+`GetTypes()` still loads `EloPointsModule` — its `OnPeriodChanged` and
+`OnPlayerReset` overrides simply have no base slot to fill — and the handshake,
+`OnCoreReady` and `PlayerDataLoaded` all run.
+
 ### 2.2 Where things go
 
 | Step | Work |
@@ -122,9 +135,11 @@ plugin, not the type name.
 | Constructor | nothing |
 | `Load` | config, `Core.Registrator.Register(_tracker)`, core-event subscriptions |
 | `UseSharedInterface` / `OnSharedInterfaceInjected` | acquire through the bridge; `RegisterMigrations(assembly)` |
-| `OnCoreReady` | resolve the table name, read core's settings, run the `UseCoreRankingLogic` check |
+| `OnCoreReady` | resolve both table names, read core's settings, run the `UseCoreRankingLogic` check |
+| `OnPeriodChanged` | drop the rating cache, leave a match the boundary cut through unrated, re-seed every session (§8.2) |
+| `OnPlayerReset` | queue the player's rating delete, re-seed their session (§8.3) |
 | `OnAllPluginsLoaded` | if `Ranks` is absent, log one ungated warning and stay idle |
-| `Unload` | settle any open match, then unwire |
+| `Unload` | discard any open match, then unwire |
 
 `RegisterMigrations` goes in the handshake, not `Load` — there is no API in
 `Load` (guide §10.5). Core dedupes on `(assembly, pluginId)`, so the handshake
@@ -262,21 +277,49 @@ rating moves on exactly the play core's statistics count.
 
 ## 4. Database
 
-### 4.1 Migration
+### 4.1 Migrations
 
 ```csharp
-[Migration(20261026120000)]
+[Migration(202610261200)]
 public sealed class M202610261200_Rating : Migration
 {
-    public override void Up() =>
-        Create.Table("ranks_elopoints")
-            .WithColumn("steam_id").AsInt64().NotNullable().PrimaryKey()
-            .WithColumn("rating").AsDecimal(10, 4).NotNullable()
-            .WithColumn("matches").AsInt32().NotNullable().WithDefaultValue(0)
-            .WithColumn("abandons").AsInt32().NotNullable().WithDefaultValue(0)
-            .WithColumn("updated_at").AsDateTime().NotNullable();
+    public override void Up()
+    {
+        if (!Schema.Table("ranks_elopoints").Exists())
+            Create.Table("ranks_elopoints")
+                .WithColumn("steam_id").AsInt64().NotNullable().PrimaryKey()
+                .WithColumn("rating").AsDecimal(10, 4).NotNullable()
+                .WithColumn("matches").AsInt32().NotNullable().WithDefaultValue(0)
+                .WithColumn("abandons").AsInt32().NotNullable().WithDefaultValue(0)
+                .WithColumn("updated_at").AsDateTime().NotNullable();
+    }
 
-    public override void Down() => Delete.Table("ranks_elopoints");
+    public override void Down() { }   // the table holds player data
+}
+
+[Migration(202611060100)]
+public sealed class M202611060100_Periods : Migration
+{
+    public override void Up()
+    {
+        if (!Schema.Table("ranks_elopoints").Column("period").Exists())
+            Alter.Table("ranks_elopoints").AddColumn("period").AsInt64().NotNullable().WithDefaultValue(0);
+
+        if (!Schema.Table("ranks_elopoints_history").Exists())
+            Create.Table("ranks_elopoints_history")
+                .WithColumn("steam_id").AsInt64().NotNullable().PrimaryKey()
+                .WithColumn("period").AsInt64().NotNullable().PrimaryKey()
+                .WithColumn("rating").AsDecimal(10, 4).NotNullable()
+                .WithColumn("matches").AsInt32().NotNullable().WithDefaultValue(0)
+                .WithColumn("abandons").AsInt32().NotNullable().WithDefaultValue(0)
+                .WithColumn("updated_at").AsDateTime().NotNullable();
+
+        if (!Schema.Table("ranks_elopoints_history").Index("ix_ranks_elopoints_history_period").Exists())
+            Create.Index("ix_ranks_elopoints_history_period").OnTable("ranks_elopoints_history")
+                .OnColumn("period").Ascending();
+    }
+
+    public override void Down() { /* drops the index only */ }
 }
 ```
 
@@ -285,7 +328,17 @@ The same four rules as WeaponStats §4.1 apply: the base name carries the
 PK is declared inline because MySQL names every primary key `PRIMARY` and a
 `Constraint(...).Exists()` guard is therefore always false; migration ids are
 unique within this assembly only, since the module has its own ledger; and no
-`Execute.Sql`, which has no expression tree for core to rewrite.
+`Execute.Sql`, which has no expression tree for core to rewrite. Every object is
+guarded on its own, so a half-applied run finishes on the next boot.
+
+**The `period` column defaults to 0**, `RanksPeriods.Initial` — core's current
+period on every install that never enabled periods — so existing ratings stay
+current and nothing changes until periods are switched on. `ranks_elopoints`
+keeps `steam_id` as its only key, as core keeps it on `ranks_players`: SQLite
+cannot alter a primary key in place, so closed periods get a table of their own
+rather than a wider key on this one. The history index serves the past-season
+leaderboard, which filters on `period` alone and so cannot use the
+`(steam_id, period)` key.
 
 **`DECIMAL(10,4)`, not `FLOAT`.** Binary floating point makes the stored value
 depend on accumulation order, so two servers writing the same sequence of deltas
@@ -300,8 +353,8 @@ This module reads the current rating, computes a new one, and writes it.
 
 ```sql
 -- MySQL / MariaDB
-INSERT INTO {t} (steam_id, rating, matches, abandons, updated_at)
-VALUES (@SteamId, @Rating, 1, @Abandons, @Now)
+INSERT INTO {t} (steam_id, period, rating, matches, abandons, updated_at)
+VALUES (@steam_id, @period, @rating, 1, @abandons, @updated_at)
 ON DUPLICATE KEY UPDATE
     rating = VALUES(rating),
     matches = matches + 1,
@@ -319,7 +372,24 @@ ON CONFLICT (steam_id) DO UPDATE SET
 
 `rating` is replaced; the two counters accumulate. Keep `VALUES()` on the MySQL
 branch — 8.0.20 deprecates it for the `AS new` alias, which MariaDB does not
-support at all.
+support at all. The update leaves `period` alone: by the time it runs, the only
+row it can hit already holds the write's period.
+
+**Every write carries the period it was settled in**, captured on the game thread
+at settle time, and lands in that period however late the store gets to it. Per
+write, inside the batch's transaction:
+
+1. `SELECT period, rating FROM {t} WHERE steam_id = @steam_id`.
+2. A row on an older period is closed first (§4.3).
+3. A row on a **newer** period means this write is a retry that crossed a
+   rollover: it goes to `{history}`'s row for its own period — the same upsert
+   with `ON CONFLICT (steam_id, period)` — and the current row is left alone.
+4. No row at all, but `{history}` already holds `(steam_id, @period)`: the
+   period has closed for this player since the write was settled (a read moved
+   the row on the way in), so the write goes to history as well. Without this
+   check it would re-open a row on a closed period, which the next read would
+   close again — dropping the write.
+5. Otherwise the upsert above, into `{t}`.
 
 Table names come from `ResolveTableName` at query-build time, never string
 concatenation.
@@ -329,30 +399,54 @@ concatenation.
 A player's rating is needed the moment they enter a match, which may be before
 they have a row. Resolution order:
 
-1. this module's table, read once per player per session and cached on the
-   session;
+1. this module's table, for the **current period**, read once per player per
+   session and cached on the session;
 2. core's `GetPoints` — covers a server migrating from core scoring, where the
    accumulated points are the only starting signal there is;
 3. `Rank.StartPoints`.
+
+The period is captured on the game thread and passed in. A row on an older
+period is that period's final rating: in one transaction it is copied to
+`{history}` (`INSERT IGNORE … SELECT` on MySQL/MariaDB, `INSERT … SELECT … WHERE
+… ON CONFLICT (steam_id, period) DO NOTHING` elsewhere — SQLite needs the `WHERE`
+to parse it) and deleted from `{t}`, both guarded by `period = @stale`, and the
+read answers null so the player seeds as a new one. A row on a newer period —
+another server sharing the database crossed the boundary first — comes back as
+it is, as core treats its own rows.
+
+**The cache is keyed by period**: an entry is `(period, rating)`, and a lookup for
+any other period misses. It is also cleared on `PeriodChanged`, so it never holds
+more than one period's worth. A reset leaves an entry with **no** rating for its
+period, which answers "none" without a query while the delete is still queued.
 
 The read is off-thread and must not block a round boundary. A read still in
 flight when a round ends leaves the session unresolved, and an unresolved player
 is simply left out of the team average rather than averaged in at a guessed
 value. That is deliberate rather than tolerated: a blocking read on the game
 thread is a stall, and one round of a slightly narrower average is invisible
-after shrinkage.
+after shrinkage. An unresolved session is never *settled*, either — see §7.3.
 
 **The continuation marshals back through `Core.Scheduler.NextTick` before it
 touches anything.** The session, core's API and the session registry are all
 game-thread state, and the `await` resumes on the thread pool — applying the
 result inline would race the round handler and could publish `RatingResolved`
-ahead of `Rating`.
+ahead of `Rating`. It also checks the session's `RatingGeneration`: a new period
+or a reset re-seeds the session and bumps it, so a read begun before either is
+discarded rather than landing the wiped rating on top of the new seed.
 
-### 4.4 Failure handling
+### 4.4 The queue, and failure handling
 
-A failed write must not lose the rating. The store retries off-thread and merges
-the failed batch back into its own buffer, never into a live session — those
-belong to the game thread (§6).
+**Every database operation the store makes runs on one queue**, in the order the
+game thread asked for it: settles, resets, purges and reads alike. That is the
+whole of the ordering argument — a reset always lands after the settle before it
+and before the settle after it, and a read can never close a player's row while a
+write for that player is still in flight.
+
+A failed write must not lose the rating. A failed batch stays at the head of the
+queue's retry list and is applied again, ahead of the next change and in the
+same transaction, never reordered — so a reset still lands between the two
+settles it came between. It never merges back into a live session; those belong
+to the game thread (§6).
 
 Log at `Error` with the exception object. This is a data-loss path and is not
 gated behind `DetailedLogging`.
@@ -402,6 +496,7 @@ count.
 | round end | `EventRoundEnd`, filtered by core's play gate |
 | match end | `EventCsWinPanelMatch`, **or** `Phase == GAMEPHASE_MATCH_ENDED` |
 | abandoned | `OnMapUnload`, or `Unload`, with a match still open |
+| cut by a season | `PeriodChanged` with a round already accrued — the rest of the match is not rated (§8.2) |
 
 Match end is deliberately double-sourced. The event is primary; the phase poll
 is a backstop, and settling is idempotent per match so firing both is harmless.
@@ -463,8 +558,9 @@ rather than once per bullet.
 internal sealed class MatchSession
 {
     public required ulong SteamId { get; init; }
-    public double Rating;            // resolved per §4.3
+    public double Rating;            // resolved per §4.3, for the current period
     public bool RatingResolved;
+    public int RatingGeneration;     // bumped on every re-seed, so a stale read is discarded
     public int RoundsPresent;
     public double SumActual;         // Σ S_r
     public double SumExpected;       // Σ E_r
@@ -501,6 +597,11 @@ It deliberately does not touch `_settled`: `Settle` sets that flag and calls
 `StartFreshMatch`, so resetting it there would let the 5-second backstop settle
 the same match repeatedly. `_settled` is cleared by the first accrued round of
 the next match instead.
+
+The per-session half is `Rebaseline`, which a reset also runs for one player
+(§8.3). A new period runs `StartFreshMatch` even between matches: core has just
+zeroed every counter the baselines were taken from, and a baseline from before
+would score the next match's play as negative (§8.2).
 
 ### 6.2 Per round
 
@@ -621,25 +722,37 @@ Settling runs on the game thread. Core is updated inline; the database write is
 queued and leaves the thread:
 
 ```csharp
+var period = _bridge.CurrentPeriod();             // captured here, travels with every write
+// ...
 _bridge.SetPoints(steamId, (int)Math.Round(updated), "elopoints.match");
 _bridge.SavePlayer(steamId);
-writes.Add(new RatingWrite(steamId, updated, abandoned));
+writes.Add(new RatingWrite(steamId, period, updated, abandoned));
 // ...
 _ = _store.CommitAsync(writes);     // off-thread from here on
-_sessions.Clear();
+StartFreshMatch();
 ```
 
 `SetPoints` has to be inline because core's API is game-thread state; the DB
 write must not be, because a synchronous write at match end is a stall.
 
+**Only a session whose rating resolved is settled.** One that never resolved
+holds either nothing — a read that did not land in a whole match — or, after a
+re-seed, the rating a new period or a reset just wiped; settling it would write
+`MinPoints + delta` or the wiped rating straight back. Such a player is left
+unrated for the match, with one ungated warning, because a read that never lands
+is a database problem worth seeing.
+
 **The module's table is still the authoritative value** (features.md §5) even
 though core is updated first. `CommitAsync` populates the store's cache before
 it queues anything, so a player who had already disconnected — and whom core may
 no longer track, making `SetPoints` a no-op — is reconciled on their next
-`PlayerDataLoaded`:
+`PlayerDataLoaded`, as long as the cached rating belongs to the period core has
+just put them in:
 
 ```csharp
-if (_store.TryGetCached(player.SteamId, out var rating) && (int)Math.Round(rating) != player.Points)
+if (_bridge.CurrentPeriod() is { } period
+    && _store.TryGetCached(player.SteamId, period, out var rating)
+    && (int)Math.Round(rating) != player.Points)
     Api.SetPoints(player.SteamId, (int)Math.Round(rating), "elopoints.resync");
 ```
 
@@ -653,14 +766,69 @@ the `DECIMAL` column exists.
 
 ---
 
-## 8. Purge
+## 8. Purge, periods and resets
+
+### 8.1 Purge
 
 ```csharp
 protected override void OnPlayersPurged(IReadOnlyList<ulong> steamIds) => _ = _store.PurgeAsync(steamIds);
 ```
 
 Core has already removed its own rows by the time this fires, so the module must
-not expect to look the player up.
+not expect to look the player up. The purge deletes from **both** tables — a
+purged player loses their history too, as in core (FR-DB-10) — and drops
+anything of theirs still waiting in the retry list, which would otherwise
+re-create a row for a player core no longer has.
+
+### 8.2 A new period
+
+Core raises `PeriodChanged` after it has moved `CurrentPeriod` and put every
+resident player back on `StartPoints` (FR-API-13). The module's own rating would
+undo that at the next match end, so `OnPeriodChanged`:
+
+1. **clears the rating cache** — every entry belongs to the period that closed;
+2. **leaves a match the boundary cut through unrated.** If any session has
+   accrued a round, the match is discarded and marked void: later rounds of it
+   accrue nothing, and the void clears when that match settles, restarts or the
+   map changes. Its rounds were measured against last period's ratings, and what
+   is left after the boundary is not a whole match;
+3. **re-baselines every session's counters**, match or no match — core has just
+   zeroed them;
+4. **re-seeds every session**: `RatingResolved` goes false, `RatingGeneration` is
+   bumped, and the rating is read again for the new period. That read closes the
+   player's old row on the way in (§4.3), so an online player's final rating for
+   the closed period reaches history at the boundary, and they start the new one
+   from core's points — `StartPoints`, which core has just set.
+
+Step 4 is what the discard alone does not do: `StartFreshMatch` keeps each
+session's rating on purpose (§6.3), so without a re-seed the next match would
+settle last period's rating into this one.
+
+Core can raise `PeriodChanged` from inside its own `round_end` dispatch — the
+rollover runs at round end — so the handler reads no native state (§2.3a). The
+discard is logged at `Information` behind `DetailedLogging`, like every other
+discard: a season boundary is expected behaviour, and core already announces it
+to the server.
+
+### 8.3 A reset
+
+`!resetrank`, `!resetmyrank` and the Settings reset wipe the player's current
+period in core, and core raises `PlayerReset` afterwards. `OnPlayerReset`:
+
+1. **queues a delete of the player's rating for the current period** behind every
+   write already queued (§4.4), from `ranks_elopoints` and — should the period
+   have closed before the delete got its turn — from `ranks_elopoints_history`.
+   Past periods stay;
+2. **marks the cache "no rating" for that period**, so a read while the delete
+   waits cannot find the old row;
+3. **re-seeds the player's session in place** from core's points — 0 after a
+   reset, so `StartPoints` — without a read, and drops the rounds it had accrued.
+
+The session is re-seeded rather than removed because nothing re-adds a session for
+a player who is still connected (§6.3): removing it would leave them unrated until
+they reconnected. Its accrued rounds go because they were measured against the
+rating the reset wiped; the player is rated on the rest of the match as if they had
+joined at that moment, which participation and shrinkage already handle.
 
 ---
 
@@ -697,3 +865,5 @@ whenever `EloMath` changes.
 | Performance coefficients (§7.2) | no | starting values; expected to move on real data |
 | Placement matches | no | deliberately out of scope (features.md §6) |
 | `Abandon.Penalty` does not deter abandonment in the first third of a lopsided match | no | bounded and documented (features.md §2.3); closing it needs `Penalty ≈ K × 0.9` |
+| A hot reload of this module adopts nobody | no | `Load` calls `Adopt` before the handshake, so `IsAvailable` is still false and every connected player stays sessionless — unrated — until they reconnect. Predates periods; §2.5 describes the intent |
+| A hot reload of core leaves this module deaf to core's events | no | `Attach` keeps the first `EloPointsModule` (`_module ??=`), still subscribed to the unloaded core's cleared hub, so `PeriodChanged`, `PlayerReset`, `PlayerDataLoaded` and `PlayersPurged` stop arriving until this module reloads too. Every official module binds this way |

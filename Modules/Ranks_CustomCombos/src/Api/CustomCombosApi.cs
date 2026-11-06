@@ -14,22 +14,25 @@ namespace Ranks.CustomCombos.Api;
 /// Ranks.Contract. This module ships that assembly itself, so it is present whenever the module is.
 ///
 /// Answers from the database plus the unflushed counts, so a figure read here matches what
-/// <c>!combos</c> prints rather than lagging a flush interval behind.
+/// <c>!combos</c> prints rather than lagging a flush interval behind. Core's periods arrive as a
+/// plain delegate, so nothing here names a Ranks.Contract type either.
 /// </remarks>
 internal sealed class CustomCombosApi : ICustomCombosApi
 {
     private readonly ISwiftlyCore _core;
     private readonly Writer _writer;
     private readonly ComboCounters _counters;
+    private readonly Func<long?> _currentPeriod;
     private readonly ILogger _logger;
 
     private ComboMatcher _matcher;
 
-    public CustomCombosApi(ISwiftlyCore core, Writer writer, ComboCounters counters, ComboMatcher matcher, ILogger logger)
+    public CustomCombosApi(ISwiftlyCore core, Writer writer, ComboCounters counters, Func<long?> currentPeriod, ComboMatcher matcher, ILogger logger)
     {
         _core = core;
         _writer = writer;
         _counters = counters;
+        _currentPeriod = currentPeriod;
         _matcher = matcher;
         _logger = logger;
     }
@@ -61,11 +64,36 @@ internal sealed class CustomCombosApi : ICustomCombosApi
 
     private static readonly Regex ColorToken = new(@"\{[a-zA-Z]+\}|\[[a-zA-Z]+\]", RegexOptions.Compiled);
 
-    public async Task<IReadOnlyList<ComboStatRow>> GetCombosAsync(ulong steamId)
+    public Task<IReadOnlyList<ComboStatRow>> GetCombosAsync(ulong steamId) =>
+        GetCombosAsync(steamId, ICustomCombosApi.AllTime);
+
+    /// <remarks>
+    /// The unflushed counts join a period read only when the next flush will stamp them with that
+    /// period. Anywhere else they would show a figure the database never ends up holding.
+    /// </remarks>
+    public async Task<IReadOnlyList<ComboStatRow>> GetCombosAsync(ulong steamId, long period)
     {
         var live = await PeekAsync(steamId);
-        var stored = await _writer.ReadAsync(steamId);
+        var stored = period == ICustomCombosApi.AllTime
+            ? await _writer.ReadAsync(steamId)
+            : await _writer.ReadAsync(steamId, period);
 
+        return Merge(stored, period == ICustomCombosApi.AllTime || live.Period == period ? live.Counts : []);
+    }
+
+    public Task<ComboStatRow?> GetComboAsync(ulong steamId, string comboKey) =>
+        GetComboAsync(steamId, comboKey, ICustomCombosApi.AllTime);
+
+    public async Task<ComboStatRow?> GetComboAsync(ulong steamId, string comboKey, long period) =>
+        (await GetCombosAsync(steamId, period)).FirstOrDefault(row => string.Equals(row.ComboKey, comboKey, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Stored rows plus unflushed counts, highest count first.</summary>
+    /// <remarks>
+    /// An unflushed combo has no stored row and therefore no stored timestamp; UtcNow is the honest
+    /// answer, since the count it describes was landed this session.
+    /// </remarks>
+    private static IReadOnlyList<ComboStatRow> Merge(List<(string ComboKey, long Count, DateTime LastAt)> stored, Dictionary<string, int> live)
+    {
         var merged = new Dictionary<string, ComboStatRow>(StringComparer.Ordinal);
 
         foreach (var (comboKey, count, lastAt) in stored)
@@ -75,8 +103,6 @@ internal sealed class CustomCombosApi : ICustomCombosApi
         {
             var row = merged.GetValueOrDefault(comboKey);
 
-            // An unflushed combo has no stored row and therefore no stored timestamp; UtcNow is
-            // the honest answer, since the count it describes was landed this session.
             merged[comboKey] = row is null
                 ? new ComboStatRow(comboKey, count, DateTime.UtcNow)
                 : row with { Count = row.Count + count, LastAt = DateTime.UtcNow };
@@ -85,30 +111,28 @@ internal sealed class CustomCombosApi : ICustomCombosApi
         return [.. merged.Values.OrderByDescending(row => row.Count)];
     }
 
-    public async Task<ComboStatRow?> GetComboAsync(ulong steamId, string comboKey) =>
-        (await GetCombosAsync(steamId)).FirstOrDefault(row => string.Equals(row.ComboKey, comboKey, StringComparison.OrdinalIgnoreCase));
-
+    /// <summary>One player's unflushed counts, and the period the next flush will stamp them with.</summary>
     /// <remarks>
     /// Hops to the game thread: the counters are game-thread state and a consumer calls this from
-    /// wherever it likes. The returned map is a copy, so the continuation is free to use it
-    /// off-thread afterwards.
+    /// wherever it likes. Both are read in the same tick, so a period change cannot fall between
+    /// them. The returned map is a copy, so the continuation is free to use it off-thread afterwards.
     /// </remarks>
-    private Task<Dictionary<string, int>> PeekAsync(ulong steamId)
+    private Task<(Dictionary<string, int> Counts, long? Period)> PeekAsync(ulong steamId)
     {
-        var completion = new TaskCompletionSource<Dictionary<string, int>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completion = new TaskCompletionSource<(Dictionary<string, int>, long?)>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         _core.Scheduler.NextTick(() =>
         {
             try
             {
-                completion.SetResult(_counters.Peek(steamId));
+                completion.SetResult((_counters.Peek(steamId), _currentPeriod()));
             }
             catch (Exception ex)
             {
                 // Falling back to stored-only is better than failing the query: the answer is then
                 // merely behind, which is what it would have been without this merge at all.
                 _logger.LogWarning(ex, "Ranks_CustomCombos: could not read unflushed counts for {SteamId}.", steamId);
-                completion.SetResult([]);
+                completion.SetResult(([], null));
             }
         });
 

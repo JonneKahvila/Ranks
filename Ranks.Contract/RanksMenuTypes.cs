@@ -18,6 +18,13 @@ public static class RanksMenuSections
     /// <summary>Under <c>Settings</c>, beside core's own preferences.</summary>
     public const string Settings = "settings";
 
+    /// <summary>Under <c>Leaderboard</c>, beside core's own lists.</summary>
+    /// <remarks>
+    /// With no entry here and periods disabled, core's Leaderboard row still opens its list directly,
+    /// so a server without leaderboard modules sees no extra screen.
+    /// </remarks>
+    public const string Leaderboard = "leaderboard";
+
     /// <summary>A top-level row on the root menu. Use sparingly — the root is the one screen every player sees.</summary>
     public const string Root = "root";
 }

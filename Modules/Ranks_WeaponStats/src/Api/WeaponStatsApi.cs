@@ -16,20 +16,25 @@ internal sealed class WeaponStatsApi : IWeaponStatsApi
     private readonly ISwiftlyCore _core;
     private readonly Writer _writer;
     private readonly Collector _collector;
+    private readonly Func<long?> _writePeriod;
     private readonly ILogger _logger;
 
-    public WeaponStatsApi(ISwiftlyCore core, Writer writer, Collector collector, ILogger logger)
+    /// <param name="writePeriod">The period unwritten counts will land in, or null while core's periods are off.</param>
+    public WeaponStatsApi(ISwiftlyCore core, Writer writer, Collector collector, Func<long?> writePeriod, ILogger logger)
     {
         _core = core;
         _writer = writer;
         _collector = collector;
+        _writePeriod = writePeriod;
         _logger = logger;
     }
 
-    public async Task<IReadOnlyList<WeaponStatRow>> GetWeaponsAsync(ulong steamId)
+    public Task<IReadOnlyList<WeaponStatRow>> GetWeaponsAsync(ulong steamId) => GetWeaponsAsync(steamId, IWeaponStatsApi.AllTime);
+
+    public async Task<IReadOnlyList<WeaponStatRow>> GetWeaponsAsync(ulong steamId, long period)
     {
-        var live = await PeekAsync(steamId);
-        var stored = await _writer.ReadWeaponsAsync(steamId);
+        var live = await PeekAsync(steamId, period);
+        var stored = await _writer.ReadWeaponsAsync(steamId, StoredPeriod(period));
 
         var merged = new Dictionary<string, WeaponStatRow>(StringComparer.Ordinal);
 
@@ -55,10 +60,12 @@ internal sealed class WeaponStatsApi : IWeaponStatsApi
         return [.. merged.Values];
     }
 
-    public async Task<IReadOnlyList<HitGroupStatRow>> GetHitGroupsAsync(ulong steamId)
+    public Task<IReadOnlyList<HitGroupStatRow>> GetHitGroupsAsync(ulong steamId) => GetHitGroupsAsync(steamId, IWeaponStatsApi.AllTime);
+
+    public async Task<IReadOnlyList<HitGroupStatRow>> GetHitGroupsAsync(ulong steamId, long period)
     {
-        var live = await PeekAsync(steamId);
-        var stored = await _writer.ReadHitGroupsAsync(steamId);
+        var live = await PeekAsync(steamId, period);
+        var stored = await _writer.ReadHitGroupsAsync(steamId, StoredPeriod(period));
 
         var merged = new Dictionary<short, HitGroupStatRow>();
 
@@ -75,10 +82,13 @@ internal sealed class WeaponStatsApi : IWeaponStatsApi
         return [.. merged.Values];
     }
 
-    public async Task<IReadOnlyList<WeaponHitGroupStatRow>> GetWeaponHitGroupsAsync(ulong steamId)
+    public Task<IReadOnlyList<WeaponHitGroupStatRow>> GetWeaponHitGroupsAsync(ulong steamId) =>
+        GetWeaponHitGroupsAsync(steamId, IWeaponStatsApi.AllTime);
+
+    public async Task<IReadOnlyList<WeaponHitGroupStatRow>> GetWeaponHitGroupsAsync(ulong steamId, long period)
     {
-        var live = await PeekAsync(steamId);
-        var stored = await _writer.ReadWeaponHitGroupsAsync(steamId);
+        var live = await PeekAsync(steamId, period);
+        var stored = await _writer.ReadWeaponHitGroupsAsync(steamId, StoredPeriod(period));
 
         var merged = new Dictionary<(string Weapon, short HitGroup), WeaponHitGroupStatRow>();
 
@@ -96,22 +106,38 @@ internal sealed class WeaponStatsApi : IWeaponStatsApi
         return [.. merged.Values];
     }
 
-    public async Task<WeaponStatRow?> GetWeaponAsync(ulong steamId, string weapon)
+    public Task<WeaponStatRow?> GetWeaponAsync(ulong steamId, string weapon) => GetWeaponAsync(steamId, weapon, IWeaponStatsApi.AllTime);
+
+    /// <remarks>
+    /// Normalised so a caller passing <c>ak47</c> finds the row stored as <c>weapon_ak47</c>; the two
+    /// event spellings are exactly what <see cref="WeaponNames"/> exists to reconcile.
+    /// </remarks>
+    public async Task<WeaponStatRow?> GetWeaponAsync(ulong steamId, string weapon, long period)
     {
-        // Normalised so a caller passing "ak47" finds the row stored as "weapon_ak47"; the two
-        // event spellings are exactly what WeaponNames exists to reconcile.
         var normalised = WeaponNames.Normalize(weapon);
 
-        return (await GetWeaponsAsync(steamId)).FirstOrDefault(row => row.Weapon == normalised);
+        return (await GetWeaponsAsync(steamId, period)).FirstOrDefault(row => row.Weapon == normalised);
     }
+
+    /// <summary>The writer's argument for a period: null reads the all-time tables.</summary>
+    private static long? StoredPeriod(long period) => period == IWeaponStatsApi.AllTime ? null : period;
+
+    /// <summary>Whether the session not yet written belongs in the figures for <paramref name="period"/>.</summary>
+    /// <remarks>
+    /// Unwritten counts land in all time and in the period writes go to now — never in a closed
+    /// period, and in no period at all while core's periods are off (FR-DB-10).
+    /// </remarks>
+    private bool IncludesUnwritten(long period) => period == IWeaponStatsApi.AllTime || period == _writePeriod();
 
     /// <remarks>
     /// Hops to the game thread: sessions are game-thread state and a consumer calls this from
     /// wherever it likes. The returned delta is a copy, so the continuation is free to use it
-    /// off-thread afterwards.
+    /// off-thread afterwards. No hop at all for a period the session does not belong to.
     /// </remarks>
-    private Task<StatsDelta?> PeekAsync(ulong steamId)
+    private Task<StatsDelta?> PeekAsync(ulong steamId, long period)
     {
+        if (!IncludesUnwritten(period)) return Task.FromResult<StatsDelta?>(null);
+
         var completion = new TaskCompletionSource<StatsDelta?>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         _core.Scheduler.NextTick(() =>

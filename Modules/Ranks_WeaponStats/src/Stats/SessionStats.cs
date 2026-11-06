@@ -71,24 +71,25 @@ internal sealed class SessionStats
         return counters;
     }
 
-    /// <summary>Takes the accumulated deltas and zeroes them in place.</summary>
+    /// <summary>Takes the accumulated deltas, stamped with the period they were earned in, and zeroes them in place.</summary>
     /// <remarks>
     /// Detaching on the game thread is what lets the writer run off it and never touch a live
     /// session again. Zeroing in place rather than replacing the object keeps the slot reference
     /// valid for handlers that are mid-dispatch.
     /// </remarks>
-    public StatsDelta? Detach() => Capture(reset: true);
+    public StatsDelta? Detach(long? period) => Capture(reset: true, period);
 
     /// <summary>Copies the accumulated deltas without clearing them.</summary>
     /// <remarks>
     /// For the read API: the database holds only what was last flushed, so a query that ignored
     /// this would under-report by the whole of the player's current session — up to
     /// FlushIntervalSeconds behind, for exactly the player most likely to be asked about.
-    /// Reading rather than flushing keeps a query from costing a write.
+    /// Reading rather than flushing keeps a query from costing a write. Unstamped: a copy is never
+    /// written, and the reader decides which period it belongs to.
     /// </remarks>
-    public StatsDelta? Peek() => Capture(reset: false);
+    public StatsDelta? Peek() => Capture(reset: false, period: null);
 
-    private StatsDelta? Capture(bool reset)
+    private StatsDelta? Capture(bool reset, long? period)
     {
         var weapons = new List<(string Weapon, WeaponCounters Counters)>();
         var weaponHitGroups = new List<(string Weapon, short HitGroup, long Hits, long Damage)>();
@@ -157,7 +158,7 @@ internal sealed class SessionStats
             hitGroups.Add((slot, rolledHits[slot], rolledDamage[slot]));
         }
 
-        return weapons.Count == 0 ? null : new StatsDelta(SteamId, weapons, hitGroups, weaponHitGroups);
+        return weapons.Count == 0 ? null : new StatsDelta(SteamId, period, weapons, hitGroups, weaponHitGroups);
     }
 }
 
@@ -165,9 +166,15 @@ internal sealed class SessionStats
 /// <remarks>
 /// <paramref name="HitGroups"/> is the per-weapon breakdown rolled up, so the two agree by
 /// construction rather than by two code paths counting the same events.
+///
+/// <paramref name="Period"/> is core's period the deltas were earned in, or null while periods are
+/// off, which writes them to the all-time tables only. It is stamped when the batch is cut rather
+/// than when it is written, because the retry buffer mixes batches: one retried after a boundary
+/// still lands in its own period (FR-DB-10).
 /// </remarks>
 internal sealed record StatsDelta(
     ulong SteamId,
+    long? Period,
     IReadOnlyList<(string Weapon, WeaponCounters Counters)> Weapons,
     IReadOnlyList<(short HitGroup, long Hits, long Damage)> HitGroups,
     IReadOnlyList<(string Weapon, short HitGroup, long Hits, long Damage)> WeaponHitGroups);

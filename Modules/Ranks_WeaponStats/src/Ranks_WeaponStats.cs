@@ -15,7 +15,7 @@ namespace Ranks.WeaponStats;
 
 [PluginMetadata(
     Id = "Ranks_WeaponStats",
-    Version = "1.0.2",
+    Version = "1.1.0",
     Name = "Ranks WeaponStats",
     Author = "Shmitzas",
     Description = "Per-weapon and per-hitgroup statistics for the Ranks plugin.")]
@@ -37,6 +37,7 @@ public sealed class RanksWeaponStats : BasePlugin
     private bool _hotReload;
     private bool _contractLoadFailed;
     private bool _playGateUnsupported;
+    private volatile bool _periodsUnsupported;
 
     public RanksWeaponStats(ISwiftlyCore core) : base(core)
     {
@@ -50,15 +51,17 @@ public sealed class RanksWeaponStats : BasePlugin
         LoadConfiguration();
 
         _writer = new Writer(Core, _logger);
-        _collector = new Collector(Core, _config, IsPlayCounted, _logger);
+        _collector = new Collector(Core, _config, IsPlayCounted, WritePeriod, _logger);
 
         // The API comes first now: the menus read through it, and the command and the bridge both
         // hand the same menus on, so nothing downstream can build a second view of these numbers.
-        _api = new WeaponStatsApi(Core, _writer, _collector, _logger);
-        _menus = new WeaponStatsMenus(Core, _api, _config, _logger);
+        _api = new WeaponStatsApi(Core, _writer, _collector, WritePeriod, _logger);
+        _menus = new WeaponStatsMenus(Core, _api, _config, WritePeriod, ListPeriodsAsync, _logger);
         _commands = new StatsCommands(Core, _writer, _menus, _logger);
         _bridge = new RanksBridge(Core, _writer, _menus, _logger);
         _bridge.CoreReady += OnRanksReady;
+        _bridge.PeriodClosed += OnPeriodClosed;
+        _bridge.PlayerReset += OnPlayerReset;
 
         // Exactly once. Registering twice double-counts every shot.
         Core.Registrator.Register(_collector);
@@ -226,10 +229,10 @@ public sealed class RanksWeaponStats : BasePlugin
         if (Core.PlayerManager.GetPlayer(e.PlayerId) is { } player) _collector.Adopt(player);
     }
 
-    /// <remarks>Takes the final delta <em>before</em> clearing the slot, in that order.</remarks>
+    /// <remarks>The collector detaches the final delta before clearing the slot, in that order.</remarks>
     private void OnDisconnected(IOnClientDisconnectedEvent e)
     {
-        if (_collector.Release(e.PlayerId)?.Detach() is { } delta)
+        if (_collector.Release(e.PlayerId) is { } delta)
             _ = _writer.FlushAsync([delta]);
     }
 
@@ -240,6 +243,30 @@ public sealed class RanksWeaponStats : BasePlugin
         if (!_writer.IsReady) return;
 
         _ = _writer.FlushAsync(_collector.DetachAll());
+    }
+
+    /// <summary>Writes everything still pending into the period that just closed (FR-DB-10).</summary>
+    /// <remarks>
+    /// Stamped from the event rather than from <see cref="WritePeriod"/>, which already answers the new
+    /// period by the time core raises it. Skipped like <see cref="FlushNow"/> while the writer is not
+    /// configured, though core cannot close a period before it is ready.
+    /// </remarks>
+    private void OnPeriodClosed(long closedPeriod)
+    {
+        if (!_writer.IsReady) return;
+
+        _ = _writer.FlushAsync(_collector.DetachAll(closedPeriod));
+    }
+
+    /// <summary>Drops the player's unwritten counts, then clears the stored ones core's reset covered.</summary>
+    /// <remarks>
+    /// The session goes first and here on the game thread, before the writer queues the reset behind
+    /// every batch already cut — so nothing earned before the reset can be written after it.
+    /// </remarks>
+    private void OnPlayerReset(ulong steamId, long? period)
+    {
+        _collector.Discard(steamId);
+        _ = _writer.ResetAsync(steamId, period);
     }
 
     private void AdoptConnectedPlayers()
@@ -294,6 +321,37 @@ public sealed class RanksWeaponStats : BasePlugin
 
         return _bridge.ArePointsEnabled() ?? false;
     }
+
+    /// <summary>The period a batch cut now belongs to: core's current one while its periods are on, else null.</summary>
+    /// <remarks>
+    /// Checks <see cref="RanksBridge.IsAvailable"/> first because the collector asks from game events
+    /// and timers, and the published API from any thread — the bridge member it guards names a
+    /// contract type. Null while core is absent: nothing is recorded then, and a period is core's.
+    /// A Ranks older than 1.1.0 fails the bridge call at JIT and lands in the catch; the module then
+    /// keeps all time only, exactly as it did before periods existed.
+    /// </remarks>
+    private long? WritePeriod()
+    {
+        if (!_bridge.IsAvailable || _periodsUnsupported) return null;
+
+        try
+        {
+            return _bridge.WritePeriod();
+        }
+        catch (MissingMethodException)
+        {
+            _periodsUnsupported = true;
+            _logger.LogWarning(
+                "Ranks_WeaponStats: this Ranks version has no seasons, so weapon stats are kept for all time only " +
+                "and !resetrank does not clear them. Update Ranks to 1.1.0 or newer.");
+
+            return null;
+        }
+    }
+
+    /// <summary>Every period core holds data for, newest first; empty while core is absent or has no periods.</summary>
+    private Task<IReadOnlyList<long>> ListPeriodsAsync() =>
+        _bridge.IsAvailable && !_periodsUnsupported ? _bridge.GetPeriodsAsync() : Task.FromResult<IReadOnlyList<long>>([]);
 
     /// <remarks>
     /// Ungated by DetailedLogging: it fires once, and it is the only signal between a

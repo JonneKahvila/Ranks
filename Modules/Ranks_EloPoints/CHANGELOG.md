@@ -14,6 +14,22 @@ Notable changes to Ranks_EloPoints, newest first.
 
      See .github/instructions/changelog.instructions.md for the full style. -->
 
+## [1.1.0] - 2026-11-06
+
+Requires Ranks 1.1.0. Worth updating if you use `!resetrank` or `!resetmyrank`.
+
+- Ratings restart with each season when core's `Database.VirtualPurgeDays` is set: everyone
+  starts the new season from `Rank.StartPoints`, and every past season's final ratings are kept.
+- `!resetrank` and `!resetmyrank` now clear the rating for good. Before, the old rating came
+  back at the end of the player's next match.
+- A match still in progress when a season ends goes unrated.
+- A player whose stored rating has not loaded by the end of a match is left unrated for it,
+  instead of being dropped to `Rank.MinPoints`.
+- First boot adds a `period` column to `ranks_elopoints` and creates the
+  `ranks_elopoints_history` table. Existing ratings carry on unchanged while seasons are off.
+- `Ranks.EloPoints.Api.v1` can read a past season's standings and leaderboard. Its existing
+  calls now answer for the current season only.
+
 ## [1.0.1] - 2026-11-04
 
 - Required by Ranks 1.0.4, which no longer loads 1.0.0 of this module.

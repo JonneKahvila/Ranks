@@ -4,7 +4,7 @@ Operator-defined kill combinations. Core prices each kill attribute separately a
 them; this module prices the **combination**, and can optionally take the kill over.
 
 > Specified by [FR-MOD-06](../../../docs/functional-requirements.md). This document
-> follows it except where §8 records a deviation.
+> follows it except where §9 records a deviation. Seasons follow FR-DB-10.
 
 ---
 
@@ -284,22 +284,27 @@ message on the server that differs between viewers.
 
 ## 7. Table and command
 
-`ranks_combos`, named through `IRanksApi.ResolveTableName` so it inherits core's prefix and
-suffix, migrated through `RegisterMigrations` (FR-API-06).
+`ranks_combos` holds lifetime counts and `ranks_combos_period` the same counts per season
+(§7.1). Both are named through `IRanksApi.ResolveTableName`, so they inherit core's prefix and
+suffix, and migrated through `RegisterMigrations` (FR-API-06).
 
 | Column | Type | |
 |---|---|---|
 | `steam_id` | BIGINT | PK with `combo_key` |
 | `combo_key` | varchar(64) | PK with `steam_id` |
-| `count` | INT | |
+| `count` | BIGINT | |
 | `last_at` | DATETIME | |
+
+`ranks_combos_period` has the same columns plus `period` (BIGINT), which joins the key:
+`(steam_id, combo_key, period)`. It got a migration of its own, `202611060100`, so the
+lifetime table keeps exactly the shape other plugins already read.
 
 Tall rather than a column per combo: combos are operator-defined, so a wide table cannot
 have a column for a key that does not exist yet.
 
-Counts accumulate in memory and flush on a timer, on map change and on unload — `ClaimKill`
-runs inside core's award path and must never touch the database there. Same Collector/Writer
-split `Ranks_WeaponStats` already uses.
+Counts accumulate in memory and flush on a timer, on map change, on unload and when core opens
+a new period — `ClaimKill` runs inside core's award path and must never touch the database
+there. Same Collector/Writer split `Ranks_WeaponStats` already uses.
 
 There is deliberately **no flush on disconnect**, unlike WeaponStats. Its session stats live
 in a per-player slot that is cleared on disconnect, so the delta has to be taken first;
@@ -318,6 +323,67 @@ for is neither counted nor allowed to take `first_blood`.
 `!combos`, alias `!mycombos`, name and permission configurable in `commands.jsonc` like
 core's. Lists the caller's combos and counts, ordered by count.
 
+### 7.1 Seasons
+
+Core owns the calendar (FR-DB-10): with `Database.VirtualPurgeDays` above zero it closes one
+period and opens the next, and a module follows its events rather than keeping a clock or a
+setting of its own. Every write then lands twice, in one transaction — added to the lifetime
+row exactly as before, and to the row of the period the count was earned in. Both writes are
+additive, so two servers sharing a database still accumulate rather than clobber.
+
+**The period travels with the count.** The counters hold none; each drain on the game thread
+stamps what it takes with core's current period, or with nothing while periods are off. Core
+changes period only on the game thread, and when it does the module drains at once, stamped
+with the period just closed, so a count earned before the boundary cannot be filed after it.
+A write that fails and is retried keeps its stamp.
+
+| Screen | Periods off | Periods on |
+|---|---|---|
+| `!combos` / Statistics → Combos | lifetime counts, as in 1.0 | this period's counts, under **All time** and **Previous seasons** rows |
+| **All time** | — | lifetime counts |
+| **Previous seasons** | — | core's period list minus the current one; each opens that period's counts |
+
+Every list keeps the `customcombos.list` id, because a renderer draws it from its
+`ComboStatRow` items whatever period they belong to; the period picker is
+`customcombos.periods`. Labels and dates match core's own: `Season from yyyy-MM-dd` in UTC, and
+`Before seasons` for period 0.
+
+**Before seasons stays empty here.** Core's period 0 holds everything it recorded before periods
+were switched on, but this module keeps counts per period only from that moment on — earlier
+combos exist only as lifetime totals. The screen says so rather than reading as lost data.
+
+With periods off nothing is written to `ranks_combos_period` at all, and every screen and API
+answer is what 1.0 gave. Against a Ranks older than 1.1.0, which has no periods, the module
+logs one warning and behaves the same way — lifetime counts only, and `!resetrank` does not
+clear them.
+
+### 7.2 Resets and purges
+
+**Reset** (`PlayerReset`, raised by `!resetrank`, `!resetmyrank` and Settings → Reset my rank).
+Core wipes only the player's current period and keeps the rest, so the module matches it:
+
+| | Lifetime row | Period rows |
+|---|---|---|
+| Periods off | deleted | untouched |
+| Periods on | the current period's count subtracted, clamped at 0; a row brought to 0 is deleted | the current period's deleted; earlier periods kept |
+
+The clamp is there because a reset made while periods were off already emptied the lifetime row
+and left the period rows standing.
+
+A write already under way must not bring back what the reset removed. Every database change —
+flush, reset, purge, reconcile — runs through one queue in the writer, in the order the game
+thread issued it, so the reset lands after every flush cut before it. The player's unflushed
+counts are dropped on the game thread, and retry entries the reset covers are dropped inside the
+queue.
+
+**Purge** (`PlayersPurged`, FR-DB-08). Both tables lose every row of each purged player, and the
+retry buffer drops theirs. Before 1.1.0 this module did not sweep at all.
+
+**Orphan reconcile.** `PlayersPurged` is a live event, so a purge that runs while this module is
+not loaded is never seen. On a cold start, once core is ready, both tables lose every row whose
+`steam_id` is not in core's `ranks_players` — the same pass `Ranks_WeaponStats` runs, and skipped
+on hot reload for the same reason (FR-DB-09).
+
 ---
 
 ## 8. Published API
@@ -332,19 +398,29 @@ public sealed record ComboStatRow(string ComboKey, long Count, DateTime LastAt);
 public interface ICustomCombosApi
 {
     const string InterfaceKey = "Ranks.CustomCombos.Api.v1";
+    const long AllTime = -1;
 
     Task<IReadOnlyList<ComboStatRow>> GetCombosAsync(ulong steamId);
+    Task<IReadOnlyList<ComboStatRow>> GetCombosAsync(ulong steamId, long period);
     Task<ComboStatRow?> GetComboAsync(ulong steamId, string comboKey);
+    Task<ComboStatRow?> GetComboAsync(ulong steamId, string comboKey, long period);
     IReadOnlyList<string> ConfiguredCombos { get; }
     string GetComboName(string comboKey);
 }
 ```
 
-The async pair merges stored rows with the caller's **unflushed** counts, so a figure read
+The async methods merge stored rows with the caller's **unflushed** counts, so a figure read
 here matches what `!combos` prints rather than lagging a flush interval behind. The peek
 hops to the game thread and copies, because the counter map belongs to that thread and a
 consumer calls from wherever it likes; a failed peek degrades to stored-only rather than
 failing the query.
+
+The overloads without a period are the 1.0 members, unchanged: lifetime counts. `AllTime`
+(`-1`, the same value as core's `RanksPeriods.AllTime`, declared again because this contract
+references nothing) asks for the same. Any other period reads that period's rows. Unflushed
+counts join a period read only when the next flush will stamp them with that period — the
+peek reads the counters and the current period in the same tick — so they never show a
+figure the database will not end up holding.
 
 `ConfiguredCombos` is synchronous because it reads the loaded rule set rather than the
 database. It is the only way to render a combo an operator has configured but nobody has

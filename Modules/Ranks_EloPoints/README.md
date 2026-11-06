@@ -10,7 +10,8 @@ Faceit-style Elo rating for the [Ranks](../../README.md) plugin.
 - 📉 **Shrinkage** - a short session is not worth a full result
 - 💪 **Performance bonus** - rewards carrying a losing team
 - 🚪 **Abandon penalty** - leaving, or going spectator, has a cost
-- 🔌 **Published API** - standings and leaderboard for other plugins
+- 📅 **Seasons** - follows core's seasons: everyone restarts, and past seasons' final ratings are kept
+- 🔌 **Published API** - standings and leaderboard for other plugins, per season
 
 **This is an absolute module.** While installed it is the sole scoring authority and
 core stops scoring entirely. At most one absolute module may be active at a time.
@@ -19,7 +20,7 @@ core stops scoring entirely. At most one absolute module may be active at a time
 
 ## Requirements
 
-- `Ranks` core installed and loaded
+- `Ranks` 1.1.0 or newer, installed and loaded
 - **`Rank.UseCoreRankingLogic` set to `false` in core's `config.jsonc`**
 - A SwiftlyS2 database connection — the same one core uses, named in **core's** config
 - A competitive match configuration (`mp_maxrounds`, halftime, win conditions)
@@ -44,7 +45,7 @@ the operator's job — this module rates the result, it does not decide who may 
 
 1. Set `Rank.UseCoreRankingLogic` to `false` in **core's** `config.jsonc`.
 2. Drop the module into your plugins directory alongside `Ranks`.
-3. Start the server once. Core creates the table on first load.
+3. Start the server once. Core creates the tables on first load.
 4. Check the console for `Ranks_EloPoints` — a missing `Ranks` is reported there, and
    the module stays idle rather than failing the server.
 5. Replace core's rank ladder with a rating-shaped one. Copy this module's
@@ -60,7 +61,8 @@ the operator's job — this module rates the result, it does not decide who may 
 
 It writes the rounded rating into core's `points`, so `!rank`, `!top`, the scoreboard
 and the clan tag all show it already. Adding an `!elo` would be a second way to read
-the same number.
+the same number. Core's `!resetrank` and `!resetmyrank` clear the rating as well — see
+[Seasons and resets](#seasons-and-resets).
 
 ---
 
@@ -109,7 +111,7 @@ This module ships no `commands.jsonc` — it registers no commands of its own.
 
 ### Read from core instead of configured here
 
-Five settings already exist in core's config, and a rating module reads them rather
+Six settings already exist in core's config, and a rating module reads them rather
 than making the operator set the same thing twice:
 
 | Core setting | Used as |
@@ -119,6 +121,7 @@ than making the operator set the same thing twice:
 | `Rank.MinPlayers` | a round played with fewer humans connected is not rated |
 | `Rank.WarmupPoints` | whether warmup rounds are rated |
 | `Rank.BotsEnabled` | with it off, a round against a team made up only of bots is not rated |
+| `Database.VirtualPurgeDays` | how long a season lasts; every rating restarts when one ends |
 
 Core still applies `MinPlayers`, `WarmupPoints` and `BotsEnabled` to its statistics with
 `UseCoreRankingLogic` off, and this module rates exactly the rounds core counted, so a
@@ -213,6 +216,29 @@ everywhere else.
 `docs/verify-figures.ps1` reproduces the full table for whatever values you are
 considering.
 
+### Seasons and resets
+
+Seasons are core's: set `Database.VirtualPurgeDays` in **core's** `config.jsonc`. This
+module has no season setting of its own — it follows core's clock, so the two can never
+disagree about when a season ends.
+
+- **When a season ends, every rating restarts.** Core puts everyone back on
+  `Rank.StartPoints`, and each player's next match is rated from there, as a new
+  player's would be.
+- **Past seasons are kept.** A player's final rating for a season moves to
+  `ranks_elopoints_history` at the boundary if they are online, or the next time they
+  join. Until then it stays in `ranks_elopoints`, tagged with that season's `period` —
+  anything reading the table directly should filter on `period`.
+- **A match in progress when a season ends goes unrated.** Its early rounds were rated
+  against last season's ratings, and the rest is not a whole match.
+- **`!resetrank` and `!resetmyrank` clear the rating** for the current season; past
+  seasons stay. A player reset mid-match is rated on the rounds after the reset only,
+  as if they had just joined.
+
+With `Database.VirtualPurgeDays` at `0` there is only ever one season: ratings never
+restart, and nothing above changes how the module behaves — except that a reset now
+sticks.
+
 ---
 
 ## For plugin developers
@@ -227,15 +253,25 @@ identities, and binding silently stops matching. (The copy beside
 public interface IEloPointsApi
 {
     const string InterfaceKey = "Ranks.EloPoints.Api.v1";
+    const long AllTime = -1;
 
     Task<EloStanding?> GetStandingAsync(ulong steamId);
+    Task<EloStanding?> GetStandingAsync(ulong steamId, long period);
     Task<IReadOnlyList<EloStanding>> GetTopAsync(int limit = 10);
+    Task<IReadOnlyList<EloStanding>> GetTopAsync(int limit, long period);
     bool IsInRatedMatch(ulong steamId);
 }
 ```
 
 `Rating` is fractional and authoritative; core's `points` holds the rounded form for
 the ladder and the scoreboard, so the two legitimately differ by up to half a point.
+
+The calls without a `period` answer for the **current season**: a player who has not
+finished a match since the season started has no standing and is not on the
+leaderboard. Pass a period id from core's `IRanksApi.CurrentPeriod` or
+`GetPeriodsAsync()` for a past season's final ratings. `AllTime` answers `null` and an
+empty list — a rating is a level, not a running total, so there is nothing to add up
+across seasons.
 
 `IsInRatedMatch` reports that a match is running, not what it is currently worth — a
 match has no result until it ends, and a provisional one would be treated as settled.
@@ -248,8 +284,11 @@ match has no result until it ends, and a provisional one would be treated as set
 | Problem | Possible Cause | Solution |
 |---------|----------------|----------|
 | "this module is idle" at startup | Ranks is not installed | Install Ranks alongside it |
+| Warning "this Ranks version has no seasons" | Ranks is older than 1.1.0 | Update Ranks; until then ratings never restart and resets do not clear them |
 | Warning about `UseCoreRankingLogic` | Core is still scoring too | Set it to `false` in core's config |
 | Everyone sits in the bottom tier | Core's point-shaped ladder is still in use | Copy `resources/examples/ranks-elo.jsonc` over core's `ranks.jsonc` |
+| Everyone's rating dropped to the start value | A new season started (`Database.VirtualPurgeDays`) | Expected — last season's final ratings are kept |
+| One match was not rated | It was in progress when a season ended | Expected — the next match is rated normally |
 | Ratings barely move | `ConfidenceRounds` shrinking short sessions | Raise `K` before lowering `ConfidenceRounds` |
 | No match is ever rated | Every round played below `Rank.MinPlayers`, in warmup, or against a team of only bots, or no match end | Check core's `MinPlayers` and `BotsEnabled`, and the match config |
 | AFK players losing rating | AFK manager moves them to spectator | Lower or disable `Abandon.Penalty` |

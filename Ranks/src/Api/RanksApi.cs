@@ -166,7 +166,10 @@ internal sealed class RanksApi : IRanksApi
     public long GetStat(ulong steamId, string statKey) =>
         _registry.BySteamId(steamId) is { } record ? StatColumns.Read(record, statKey) : 0;
 
-    public async Task<IReadOnlyList<RanksLeaderboardEntry>> GetTopAsync(string statKey = "points", int limit = 10)
+    public async Task<IReadOnlyList<RanksLeaderboardEntry>> GetTopAsync(string statKey = "points", int limit = 10) =>
+        await GetTopAsync(statKey, limit, _sessions.ActivePeriod).ConfigureAwait(false);
+
+    public async Task<IReadOnlyList<RanksLeaderboardEntry>> GetTopAsync(string statKey, int limit, long period)
     {
         if (!StatColumns.TryResolve(statKey, out var column))
         {
@@ -175,30 +178,29 @@ internal sealed class RanksApi : IRanksApi
         }
 
         var bounded = Math.Clamp(limit, 1, 100);
+        var current = _sessions.ActivePeriod;
+        var startPoints = _config.Current.Rank.StartPoints;
 
         var rows = await Task.Run(() =>
         {
             try
             {
-                return _store.Top(column, bounded);
+                return _store.Top(column, bounded, period, current, startPoints);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Ranks: leaderboard query failed for {StatKey}.", statKey);
+                _logger.LogError(ex, "Ranks: leaderboard query failed for {StatKey} in period {Period}.", statKey, period);
                 return [];
             }
         }).ConfigureAwait(false);
 
         var entries = new List<RanksLeaderboardEntry>(rows.Count);
+        var closed = period != current && period != RanksPeriods.AllTime;
 
         for (var i = 0; i < rows.Count; i++)
         {
             var (steamId, name, value, points) = rows[i];
-
-            // The tier is a property of the player, not of the leaderboard they appear on, so it
-            // is always resolved from points even when the sort is on another column. A resident
-            // record wins over the stored value because it may hold unsaved points.
-            var tier = _ladder.TierFor(_registry.BySteamId(steamId)?.Points ?? points);
+            var tier = _ladder.TierFor(StandingFor(steamId, points, closed));
 
             entries.Add(new RanksLeaderboardEntry(i + 1, steamId, name, value, tier.Name, tier.Tag));
         }
@@ -206,36 +208,57 @@ internal sealed class RanksApi : IRanksApi
         return entries;
     }
 
-    public Task<int> GetPositionAsync(ulong steamId, string statKey = "points")
+    /// <summary>The points a leaderboard row's tier is resolved from.</summary>
+    /// <remarks>
+    /// The tier is a property of the player, not of the leaderboard they appear on, so it is always
+    /// resolved from points even when the sort is on another column. A resident record wins over
+    /// the stored value because it may hold unsaved points — except on a closed period, whose row
+    /// already holds the tier the player finished it on.
+    /// </remarks>
+    private int StandingFor(ulong steamId, int storedPoints, bool closedPeriod) =>
+        closedPeriod ? storedPoints : _registry.BySteamId(steamId)?.Points ?? storedPoints;
+
+    public Task<int> GetPositionAsync(ulong steamId, string statKey = "points") =>
+        GetPositionAsync(steamId, statKey, _sessions.ActivePeriod);
+
+    public Task<int> GetPositionAsync(ulong steamId, string statKey, long period)
     {
         if (!StatColumns.TryResolve(statKey, out var column)) return Task.FromResult(0);
+
+        var current = _sessions.ActivePeriod;
+        var startPoints = _config.Current.Rank.StartPoints;
 
         return Task.Run(() =>
         {
             try
             {
-                return _store.Position(steamId, column);
+                return _store.Position(steamId, column, period, current, startPoints);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Ranks: position query failed for {SteamId}.", steamId);
+                _logger.LogError(ex, "Ranks: position query failed for {SteamId} in period {Period}.", steamId, period);
                 return 0;
             }
         });
     }
 
-    public Task<int> GetTotalRankedAsync() => Task.Run(() =>
+    public Task<int> GetTotalRankedAsync()
     {
-        try
+        var current = _sessions.ActivePeriod;
+
+        return Task.Run(() =>
         {
-            return _store.TotalRanked();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Ranks: total-ranked query failed.");
-            return 0;
-        }
-    });
+            try
+            {
+                return _store.TotalRanked(current, current);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ranks: total-ranked query failed.");
+                return 0;
+            }
+        });
+    }
 
     public void SetKillArbiter(IRanksKillArbiter? arbiter) => _awards.SetKillArbiter(arbiter);
 
@@ -314,11 +337,14 @@ internal sealed class RanksApi : IRanksApi
         // Resident first: the stored row lags whatever the player earned since the last save.
         if (_registry.BySteamId(steamId) is { } resident) return _sessions.Snapshot(resident);
 
+        var current = _sessions.ActivePeriod;
+        var startPoints = _config.Current.Rank.StartPoints;
+
         return await Task.Run(() =>
         {
             try
             {
-                if (_store.Load(steamId) is not { } stored) return null;
+                if (_store.ReadCurrent(steamId, current, startPoints) is not { } stored) return null;
 
                 stored.RankIndex = _ladder.IndexFor(stored.Points);
                 return _sessions.Snapshot(stored);
@@ -329,5 +355,117 @@ internal sealed class RanksApi : IRanksApi
                 return null;
             }
         }).ConfigureAwait(false);
+    }
+
+    public async Task<RanksPlayerSnapshot?> LoadSnapshotAsync(ulong steamId, long period)
+    {
+        if (period == _sessions.ActivePeriod) return await LoadSnapshotAsync(steamId).ConfigureAwait(false);
+        if (period == RanksPeriods.AllTime) return await LoadAllTimeSnapshotAsync(steamId).ConfigureAwait(false);
+
+        return await Task.Run(() =>
+        {
+            try
+            {
+                if (_store.ReadPeriod(steamId, period) is not { } stored) return null;
+
+                stored.RankIndex = _ladder.IndexFor(stored.Points);
+                return _sessions.Snapshot(stored);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ranks: snapshot load failed for {SteamId} in period {Period}.", steamId, period);
+                return null;
+            }
+        }).ConfigureAwait(false);
+    }
+
+    /// <summary>Every closed period summed, plus the period the player is in now.</summary>
+    /// <remarks>
+    /// The resident snapshot is taken here, on the caller's thread, because the record belongs to
+    /// the game thread; the stored row stands in only for a player who is not resident.
+    /// </remarks>
+    private async Task<RanksPlayerSnapshot?> LoadAllTimeSnapshotAsync(ulong steamId)
+    {
+        var resident = _registry.BySteamId(steamId) is { } record ? _sessions.Snapshot(record) : null;
+        var startPoints = _config.Current.Rank.StartPoints;
+
+        return await Task.Run(() =>
+        {
+            try
+            {
+                var latest = resident ?? (_store.ReadStored(steamId) is { } stored ? _sessions.Snapshot(stored) : null);
+                if (latest is null) return null;
+
+                return AllTime(latest, _store.ReadHistoryTotals(steamId), startPoints);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ranks: all-time snapshot load failed for {SteamId}.", steamId);
+                return null;
+            }
+        }).ConfigureAwait(false);
+    }
+
+    /// <remarks>
+    /// Points count each period's gain over <c>Rank.StartPoints</c> and add the start back once, so
+    /// a player in a single period reads exactly their points.
+    /// </remarks>
+    private RanksPlayerSnapshot AllTime(RanksPlayerSnapshot latest, PlayerTotals history, int startPoints)
+    {
+        var points = (int)Math.Clamp(latest.Points + history.Points - history.Periods * startPoints, int.MinValue, int.MaxValue);
+        var index = _ladder.IndexFor(points);
+        var tier = _ladder.Tiers[Math.Clamp(index, 0, _ladder.Tiers.Count - 1)];
+
+        return new RanksPlayerSnapshot(
+            latest.SteamId, latest.Name, points, tier.Name, tier.Tag, index,
+            latest.Kills + history.Kills, latest.Deaths + history.Deaths, latest.Assists + history.Assists,
+            latest.RoundWins + history.RoundWins, latest.RoundLosses + history.RoundLosses,
+            latest.MatchWins + history.MatchWins, latest.MatchLosses + history.MatchLosses,
+            latest.BombsPlanted + history.BombsPlanted, latest.BombsDefused + history.BombsDefused,
+            latest.FirstSeen, latest.LastSeen)
+        {
+            Headshots = latest.Headshots + history.Headshots,
+            Hits = latest.Hits + history.Hits,
+            Misses = latest.Misses + history.Misses,
+            Period = RanksPeriods.AllTime,
+        };
+    }
+
+    public long CurrentPeriod => _sessions.ActivePeriod;
+
+    public bool ArePeriodsEnabled => _sessions.PeriodsEnabled;
+
+    public DateTime? CurrentPeriodEndsAt => _sessions.ActivePeriodEndsAt;
+
+    public event Action<RanksPeriodChangedArgs> PeriodChanged
+    {
+        add => _events.PeriodChanged += value;
+        remove => _events.PeriodChanged -= value;
+    }
+
+    public event Action<RanksPlayerResetArgs> PlayerReset
+    {
+        add => _events.PlayerReset += value;
+        remove => _events.PlayerReset -= value;
+    }
+
+    public async Task<IReadOnlyList<long>> GetPeriodsAsync()
+    {
+        var current = _sessions.ActivePeriod;
+
+        var stored = await Task.Run(() =>
+        {
+            try
+            {
+                return _store.Periods();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ranks: period list query failed.");
+                return [];
+            }
+        }).ConfigureAwait(false);
+
+        return stored.Append(current).Distinct().OrderDescending().ToArray();
     }
 }

@@ -27,6 +27,32 @@
   // {0} is the weapon, already stripped of its weapon_ prefix and upper-cased.
   "menu.weaponhits.title": "{0} - Hit Stats",
 
+  // ---- Seasons ------------------------------------------------------------
+  //
+  // Only while core's Database.VirtualPurgeDays is above zero. Both rows under Statistics then
+  // open on these three choices; with it at 0 they open their lists exactly as before. The wording
+  // matches core's own season screens.
+
+  "menu.period.current": "This season",
+  "menu.period.alltime": "All time",
+  "menu.period.previous": "Previous seasons",
+
+  "menu.period.title": "Previous seasons",
+  // {0} is the season's first day, as yyyy-MM-dd in UTC.
+  "menu.period.row": "Season from {0}",
+  // Everything recorded before seasons were switched on. Nothing was kept per season then, so this
+  // one always opens empty here; those figures are all under All time.
+  "menu.period.initial": "Before seasons",
+  "menu.period.empty": "No previous seasons yet.",
+
+  // {0} is one of the season labels above.
+  "menu.weapons.title_period": "Weapon stats - {0}",
+  "menu.weapons.empty_period": "No weapon statistics in this season.",
+  "menu.hitgroups.title_period": "Hit Stats - {0}",
+  "menu.hitgroups.empty_period": "No hits landed in this season.",
+  // {0} is the weapon as in menu.weaponhits.title, {1} one of the season labels above.
+  "menu.weaponhits.title_period": "{0} - {1}",
+
   "hitgroup.generic": "Generic",
   "hitgroup.head": "Head",
   "hitgroup.chest": "Chest",

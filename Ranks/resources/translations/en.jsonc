@@ -30,8 +30,15 @@
 
   // ---- Self reset ---------------------------------------------------------
 
-  "reset.confirm": "[red]This wipes your XP and statistics.[default] Type the command again within [gold]{0}[default] seconds to confirm.",
+  "reset.confirm": "[red]This wipes your current XP and statistics.[default] Type the command again within [gold]{0}[default] seconds to confirm.",
   "reset.done": "[green]Your rank has been reset.",
+
+  // ---- Seasons ------------------------------------------------------------
+  //
+  // Only when Database.VirtualPurgeDays is above zero. A season is one period: everyone's rank
+  // starts over when it ends, and the season that closed stays browsable under Leaderboard.
+
+  "period.started": "[gold]A new season has started![default] Everyone's rank starts over. Last season's standings are kept under [gold]Leaderboard[default].",
 
   // ---- Admin --------------------------------------------------------------
 
@@ -99,6 +106,10 @@
   "menu.stats.title": "Statistics",
   "menu.stats.main": "Main statistics",
   "menu.stats.main_title": "Main statistics",
+  // The three rows below replace "Main statistics" while seasons are on.
+  "menu.stats.current": "This season",
+  "menu.stats.alltime": "All-time statistics",
+  "menu.stats.previous": "Previous seasons",
   "menu.stats.kills": "Kills: {0}",
   "menu.stats.deaths": "Deaths: {0}",
   "menu.stats.kd": "K/D: {0}",
@@ -114,7 +125,7 @@
   "menu.settings.XP_messages": "XP messages",
   "menu.settings.reset": "Reset my rank",
   "menu.settings.reset_title": "Reset my rank",
-  "menu.settings.reset_warning": "This wipes your XP and all statistics. It cannot be undone.",
+  "menu.settings.reset_warning": "This wipes your current XP and statistics. It cannot be undone.",
   "menu.settings.reset_confirm": "Yes, reset everything",
 
   "menu.top.title": "Leaderboard",
@@ -122,6 +133,20 @@
   "menu.top.hint": "Select to view this player's statistics",
   "menu.top.empty": "Nobody is ranked yet.",
   "menu.top.error": "The leaderboard is unavailable right now.",
+  // Rows of the Leaderboard screen, shown when seasons are on or a module adds a board there.
+  "menu.top.players": "Players",
+  "menu.top.current": "This season",
+  "menu.top.alltime": "All time",
+  "menu.top.previous": "Previous seasons",
+
+  // {0} is the season's first day, as yyyy-MM-dd in UTC.
+  "menu.period.title": "Previous seasons",
+  "menu.period.row": "Season from {0}",
+  // Everything recorded before seasons were switched on.
+  "menu.period.initial": "Before seasons",
+  // {0} is yyyy-MM-dd HH:mm in UTC.
+  "menu.period.ends": "Season ends {0} UTC",
+  "menu.period.empty": "No previous seasons yet.",
 
   // {0} is the player's stored name.
   "menu.playerstats.title": "{0}",

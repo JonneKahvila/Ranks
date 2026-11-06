@@ -4,6 +4,10 @@ namespace Ranks.CustomCombos.Stats;
 /// <remarks>
 /// Accumulated in memory because the arbiter runs inside core's award path, where a database round
 /// trip would sit on the game thread for every kill.
+///
+/// Holds no period of its own: core changes period only on the game thread, and the module drains
+/// on that change, so everything held here was earned in the period current at the next drain
+/// (FR-DB-10).
 /// </remarks>
 internal sealed class ComboCounters
 {
@@ -20,8 +24,9 @@ internal sealed class ComboCounters
         combos[comboKey] = combos.GetValueOrDefault(comboKey) + 1;
     }
 
-    /// <summary>Takes everything pending and clears it, in that order.</summary>
-    public List<ComboDelta> Drain()
+    /// <summary>Takes everything pending, stamped with the period it was earned in, and clears it.</summary>
+    /// <param name="period">Null while core runs no periods, which writes the lifetime table only.</param>
+    public List<ComboDelta> Drain(long? period)
     {
         if (_pending.Count == 0) return [];
 
@@ -29,12 +34,15 @@ internal sealed class ComboCounters
 
         foreach (var (steamId, combos) in _pending)
             foreach (var (key, count) in combos)
-                batch.Add(new ComboDelta(steamId, key, count));
+                batch.Add(new ComboDelta(steamId, key, count, period));
 
         _pending.Clear();
 
         return batch;
     }
+
+    /// <summary>Drops one player's unflushed counts, so a reset cannot see them written afterwards.</summary>
+    public void Discard(ulong steamId) => _pending.Remove(steamId);
 
     /// <summary>One player's unflushed counts, without clearing them.</summary>
     /// <remarks>
@@ -47,4 +55,6 @@ internal sealed class ComboCounters
             : [];
 }
 
-internal readonly record struct ComboDelta(ulong SteamId, string ComboKey, int Count);
+/// <summary>One drained count, with the period it was earned in.</summary>
+/// <remarks>The period travels with the row, so a write retried after a period change still lands in the period it was earned in.</remarks>
+internal readonly record struct ComboDelta(ulong SteamId, string ComboKey, int Count, long? Period);

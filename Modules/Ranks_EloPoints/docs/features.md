@@ -2,7 +2,8 @@
 
 > **Status:** design, implemented. The restart-reset question is closed
 > (confirmed on a live server, §2.1).
-> Specified by [FR-MOD-05](../../../docs/functional-requirements.md).
+> Specified by [FR-MOD-05](../../../docs/functional-requirements.md); seasons by
+> FR-DB-10 (§2.4).
 
 An Elo rating that replaces core's scoring entirely. Rating moves on **outcome
 against expectation**: who you beat matters more than how many you killed.
@@ -233,6 +234,46 @@ never `Team.None` (0), which every player passes through while connecting. A
 dead player watching is observer mode, not a team change, and halftime is T↔CT.
 Neither produces a false positive.
 
+### 2.4 Seasons
+
+Seasons are core's virtual purge (FR-DB-10): with `Database.VirtualPurgeDays`
+set, core closes the current **period** every N days, puts every player back on
+`Rank.StartPoints` and keeps the closed period. This module carries no setting of
+its own — core is the only clock, and the module follows it.
+
+A rating is an absolute value, so it cannot simply be added up per season the way
+a kill counter can. Each period therefore has its own rating, and a new one
+starts every player **unrated**: their first match of the season seeds them from
+core's points, which core has just reset to `StartPoints`. The closed period's
+final rating is kept, not overwritten.
+
+Without this, the module's own stored rating would undo the purge: core resets
+the points, and the next match end writes last season's rating plus the match
+delta straight back over them.
+
+**A match in progress at the boundary is not rated.** Its rounds were measured
+against last season's ratings, and what is left after the boundary is not a
+whole match, so neither half can be settled into the new season honestly. The
+next match is rated normally. Like a map change, that costs nobody anything —
+nothing was written.
+
+With seasons off there is exactly one period, ratings never restart, and nothing
+in this section changes how the module behaves.
+
+### 2.5 Resets
+
+Core's `!resetrank` and `!resetmyrank` wipe the player's **current** period;
+past seasons are history and stay. The module clears that player's rating for
+the period with it, so their next match is rated from `StartPoints` like a new
+player's.
+
+A player reset mid-match is treated as if they joined at that moment: the rounds
+they had accrued were measured against the rating the reset wiped, so they are
+dropped, and the player is rated on the rest of the match only.
+
+Before 1.1.0 the module never heard about a reset, so the old rating came back at
+the player's next match end.
+
 ---
 
 ## 3. Bots and unrated players
@@ -274,6 +315,9 @@ operator has already stated whether bots count.
 | Shared connection, affixed names, schema | `ConnectionName`, `ResolveTableName`, `RegisterMigrations` | exists (FR-API-06) |
 | Durability at match end | `SavePlayerAsync`, `SaveAllAsync` | exists (FR-API-09) |
 | Sweep its rows on purge | `PlayersPurged` | exists (FR-API-04) |
+| The period a rating belongs to | `CurrentPeriod` | exists (FR-API-13) |
+| Restart every rating with the season | `PeriodChanged` | exists (FR-API-13) |
+| Clear a reset player's rating | `PlayerReset` | exists (FR-API-13) |
 
 **Performance inputs come from diffing `GetSnapshot`, not from `GetStat`.** Both
 expose the same counters, but they are lifetime totals — the module needs the
@@ -302,10 +346,20 @@ ledger (FR-DB-05).
 | Column | Type | Why |
 |---|---|---|
 | `steam_id` | `BIGINT` PK | |
+| `period` | `BIGINT` | the period the rating belongs to; `0` for anything rated before seasons were enabled (FR-DB-10) |
 | `rating` | `DECIMAL(10,4)` | **the authoritative value** |
-| `matches` | `INT` | played to completion |
+| `matches` | `INT` | played to completion in that period |
 | `abandons` | `INT` | for operator visibility, not used in the formula |
 | `updated_at` | `DATETIME` | |
+
+**One row per player, for the period they last played in.** A row left on an
+older period is that period's final rating. It moves to
+`ranks_elopoints_history` — the same columns, keyed `(steam_id, period)` — the
+first time anything touches the player in a later period: their next join, or
+their next match end. So the current season's leaderboard is `ranks_elopoints`
+filtered to the current period, and a past season's is its history rows plus any
+`ranks_elopoints` rows still holding it. Moving rows lazily, the way core moves
+an offline player's row on their next load, means a boundary costs no bulk write.
 
 **The `DECIMAL` is the point of the table.** Core's `points` is an `INT` (Q15),
 and Elo deltas are fractional. Truncating each delta into core would accumulate
@@ -332,3 +386,6 @@ committed here, and it is pushed to core on their next `PlayerDataLoaded`.
 | Handle FFA, deathmatch or arenas | no meaningful notion of two teams or a match result |
 | Register itself as the active scorer | core deliberately tracks no such thing (FR-PTS-00); two absolute modules at once is an operator constraint, not a detectable error |
 | Award anything per kill | that is core's model, and this module exists to replace it |
+| An all-time rating | a rating is a level, not a running total — one season's 1450 plus the next one's 1380 means nothing — so the API answers `AllTime` with nothing |
+| Carry part of last season's rating into the next (a soft reset) | core restarts everyone's points at `StartPoints`; a rating seeded anywhere else would disagree with the ladder from the first match on |
+| Its own season length or purge setting | core is the only clock (FR-DB-10); a second one could disagree with core about which season a match belongs to |

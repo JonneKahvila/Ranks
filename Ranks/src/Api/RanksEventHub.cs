@@ -31,6 +31,10 @@ internal sealed class RanksEventHub
 
     public event Action? CoreReady;
 
+    public event Action<RanksPeriodChangedArgs>? PeriodChanged;
+
+    public event Action<RanksPlayerResetArgs>? PlayerReset;
+
     public void RaisePlayerDataLoaded(RanksPlayerSnapshot snapshot) => Raise(PlayerDataLoaded, snapshot, nameof(PlayerDataLoaded));
 
     public void RaisePlayerDataSaved(RanksPlayerSnapshot snapshot) => Raise(PlayerDataSaved, snapshot, nameof(PlayerDataSaved));
@@ -44,6 +48,10 @@ internal sealed class RanksEventHub
     public void RaiseMaintenanceDue() => Raise(MaintenanceDue, nameof(MaintenanceDue));
 
     public void RaiseCoreReady() => Raise(CoreReady, nameof(CoreReady));
+
+    public void RaisePeriodChanged(RanksPeriodChangedArgs args) => Raise(PeriodChanged, args, nameof(PeriodChanged));
+
+    public void RaisePlayerReset(RanksPlayerResetArgs args) => Raise(PlayerReset, args, nameof(PlayerReset));
 
     /// <summary>Offers an award to subscribers and returns what they made of it.</summary>
     /// <remarks>
@@ -120,5 +128,7 @@ internal sealed class RanksEventHub
         PlayersPurged = null;
         MaintenanceDue = null;
         CoreReady = null;
+        PeriodChanged = null;
+        PlayerReset = null;
     }
 }

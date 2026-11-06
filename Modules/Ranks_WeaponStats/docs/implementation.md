@@ -28,10 +28,11 @@ Modules/Ranks_WeaponStats/
     ├── Ranks_WeaponStats.cs      # BasePlugin, lifecycle, contract isolation
     ├── Api/RanksBridge.cs        # the ONLY file naming IRanksApi
     ├── Config/Config.cs
-    ├── Migrations/M0001_Tables.cs
+    ├── Migrations/               # four, the last adding the per-period tables
+    ├── Menus/WeaponStatsMenus.cs
     ├── Stats/Collector.cs        # game-event handlers, hot path
     ├── Stats/SessionStats.cs
-    ├── Stats/Writer.cs           # off-thread, additive upserts
+    ├── Stats/Writer.cs           # off-thread, additive upserts, one ordered queue
     └── Commands/StatsCommands.cs
 ```
 
@@ -268,6 +269,41 @@ guards in §4.1 are correct as written, and a module should use them normally.
 > expressions but not the queries is a half-decorator, and the asymmetry is
 > invisible until a second affixed install appears on one database.
 
+### 4.5 Per-period tables and the dual write (FR-DB-10)
+
+`M202611060100_PeriodTables` adds `ranks_weapon_stats_period`,
+`ranks_hit_stats_period` and `ranks_weapon_hit_stats_period`: the same columns as
+their all-time tables plus `period BIGINT NOT NULL`, keyed by the all-time key plus
+`period`, inline, each table guarded on its own. It is a new migration rather than an
+edit to an applied one, and nothing is backfilled.
+
+`StatsDelta` carries `long? Period`, stamped when the batch is cut on the game thread:
+core's `CurrentPeriod` while `ArePeriodsEnabled`, else null. The collector stays
+contract-free — it asks through a `Func<long?>` whose target checks
+`RanksBridge.IsAvailable` before the `[NoInlining]` bridge member, exactly as it asks
+for core's play gate. Against a Ranks older than 1.1.0 that member fails at JIT with
+`MissingMethodException`; the plugin catches it once, logs a warning, and answers null
+from then on, which is 1.0.2's behaviour.
+
+`Writer.Write` upserts each delta into the all-time tables with the statements above,
+unchanged, and — when `Period` is set — into the per-period twin with the same
+statement and `period` added to the key, in the same transaction. A null `Period` never
+touches the per-period tables, so with seasons off nothing new is written.
+
+Reads take a `long? period`: null reads the all-time tables with the original
+statements, a value reads `WHERE steam_id = @steam_id AND period = @period`.
+`WeaponStatsApi` adds the live session only for `AllTime` or the period being written
+now.
+
+### 4.6 One ordered queue for every write
+
+Every database operation the writer performs — flush, reset, purge, orphan reconcile —
+is queued on a single `ContinueWith` chain and runs one at a time, in the order it was
+handed over. A semaphore taken inside `Task.Run` would not do: two tasks started in
+order can still reach it out of order, and a reset overtaking an earlier flush is
+exactly the resurrection §8.2 exists to prevent. The retry buffer is touched only from
+queued operations, so it needs no lock of its own. Reads are not queued.
+
 ---
 
 ## 5. The hot path
@@ -500,6 +536,14 @@ a teardown.
 
 On disconnect, take the final delta **before** clearing the slot, in that order.
 
+### 6.3 Season boundaries
+
+Core raises `PeriodChanged` on the game thread after `CurrentPeriod` has already moved
+to the new period. The module cuts every live session there and then, stamped with
+`OldPeriod` rather than with the current period, and hands the batch to the writer. A
+cut made before the event — the timer, a disconnect — was already stamped with the old
+period, because core's `CurrentPeriod` only changes inside its rollover.
+
 ---
 
 ## 7. Commands
@@ -531,8 +575,10 @@ A player with no rows yet gets a localized "no stats" line, not an empty table.
 api.PlayersPurged += ids => DeleteRowsAsync(ids);
 ```
 
-Delete from both tables, batched. Core has already removed its own rows by the
-time this fires, so the module must not expect to look the player up.
+Delete from all six tables — all time and every period — in one queued transaction.
+Core has already removed its own rows by the time this fires, so the module must not
+expect to look the player up. A purge takes past periods too, as it does in core
+(FR-DB-08).
 
 ### 8.1 Orphans from a purge the module missed
 
@@ -552,17 +598,36 @@ DELETE FROM {weapon_stats}
 Both names come from `ResolveTableName`, so this works under any affix. It is
 safe to depend on core's table here: FR-DB-04 fixes `ranks_players` as a closed,
 known schema, which makes it a contract rather than an implementation detail.
+The same statement runs against all six tables; every player core keeps has a
+`ranks_players` row whatever periods they hold.
 
 Skipped on hot reload, and skipped entirely if the probe in guide §4.6 reported
 core's tables unreadable — deleting against a half-broken schema is worse than
 leaving orphans.
+
+### 8.2 Resets
+
+`PlayerReset` (FR-API-13) arrives on the game thread after core wiped the player's
+current period. The module drops the player's live session delta right there, then
+queues a reset behind every write already handed over (§4.6). The queued reset first
+drops the player's retry entries for what it wipes, then, in one transaction:
+
+| Seasons | Statements |
+|---|---|
+| off | `DELETE` the player's rows from the three all-time tables |
+| on | read the player's rows for that period from the three per-period tables; `UPDATE` each matching all-time row by `CASE WHEN col > @col THEN col - @col ELSE 0 END`; `DELETE` all-time rows the subtraction left at zero; `DELETE` the period's rows |
+
+Retry entries stamped with a closed period stay — core keeps past periods through a
+reset. A failed reset is logged and not retried: a later attempt would also take away
+whatever the player has earned since.
 
 ---
 
 ## 9. Threading
 
 - Game-event handlers and the snapshot pass: **game thread**.
-- Writer, retry buffer, purge deletes: **off-thread**.
+- Writer, retry buffer, purge deletes, resets: **off-thread**, one at a time from a
+  single ordered queue (§4.6).
 - Nothing crosses back. The module touches no pawns or entities, so it needs no
   `NextWorldUpdate` hop at all.
 
@@ -609,6 +674,15 @@ are `[Obsolete]` and throw at runtime.
 - [ ] Deltas survive a failed flush and land on the retry
 - [ ] Command names grepped against sibling plugins
 - [ ] No identifier named `rank`
+- [ ] With core's `Database.VirtualPurgeDays = 0`, the three `_period` tables stay
+      empty and both Statistics rows open their lists directly
+- [ ] With seasons on, a rollover writes the counts still pending into the season
+      that closed, and the next shot lands in the new one
+- [ ] `!resetrank` with seasons off deletes the player's all-time rows; with seasons
+      on it takes the current season off all time and keeps past seasons
+- [ ] A purge removes the player from all six tables
+- [ ] Against a Ranks older than 1.1.0 the module records all time only and warns
+      once
 
 ---
 
