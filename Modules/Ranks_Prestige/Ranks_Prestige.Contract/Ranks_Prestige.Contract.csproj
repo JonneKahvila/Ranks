@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>Ranks_Prestige.Contract</AssemblyName>
+    <RootNamespace>Ranks.Prestige.Contract</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <OutputPath>$(MSBuildThisFileDirectory)build/</OutputPath>
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <!-- Same shape as Ranks_WeaponStats.Contract: a consumer names IPrestigeApi without referencing
+       the plugin assembly, and references nothing, so it is independent of core and SwiftlyS2. -->
+
+</Project>

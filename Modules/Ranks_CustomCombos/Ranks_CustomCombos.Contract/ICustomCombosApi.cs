@@ -38,4 +38,8 @@ public interface ICustomCombosApi
     /// a combo an operator has configured but nobody has landed yet, which no counter row covers.
     /// </remarks>
     IReadOnlyList<string> ConfiguredCombos { get; }
+
+    /// <summary>The name <c>!combos</c> shows for a combo: its <c>combo.&lt;key&gt;</c> translation without colour tokens, else the key.</summary>
+    /// <remarks>Synchronous: it reads the loaded translations, not the database.</remarks>
+    string GetComboName(string comboKey);
 }

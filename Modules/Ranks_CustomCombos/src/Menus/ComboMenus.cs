@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Ranks.CustomCombos.Contract;
 using SwiftlyS2.Shared;
@@ -56,34 +55,11 @@ internal sealed class ComboMenus
                 }
             })
             {
-                Formatter = r => _core.Localizer["menu.combos.row", Describe(r.ComboKey), r.Count],
+                Formatter = r => _core.Localizer["menu.combos.row", _api.GetComboName(r.ComboKey), r.Count],
                 EmptyText = _core.Localizer["menu.combos.empty"],
                 FailedText = _core.Localizer["menu.combos.error"],
             })
             .AddFooter(new DividerComponent())
             .Build();
     }
-
-    /// <remarks>Same missing-key fallback as the arbiter's chat line, for the same reason.</remarks>
-    private string Describe(string comboKey)
-    {
-        var key = $"combo.{comboKey}";
-        var resolved = _core.Localizer[key];
-
-        return string.IsNullOrEmpty(resolved)
-               || string.Equals(resolved, key, StringComparison.Ordinal)
-               || resolved.EndsWith('.' + key, StringComparison.Ordinal)
-            ? comboKey
-            : StripColorTokens(resolved);
-    }
-
-    /// <remarks>
-    /// <c>combo.*</c> names are operator-authored and shared with the arbiter's chat line, so they
-    /// routinely carry chat colour tokens. A menu row wants HTML, so a token left in renders as
-    /// literal <c>{lime}</c> text to the player.
-    /// </remarks>
-    private static string StripColorTokens(string text) =>
-        ColorToken.Replace(text, string.Empty).Trim();
-
-    private static readonly Regex ColorToken = new(@"\{[a-zA-Z]+\}|\[[a-zA-Z]+\]", RegexOptions.Compiled);
 }

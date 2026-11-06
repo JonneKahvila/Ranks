@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Ranks.Contract;
 using Ranks.Prestige.Config;
+using Ranks.Prestige.Contract;
 using Ranks.Prestige.Menus;
 using Ranks.Prestige.Prestiging;
 using SwiftlyS2.Shared;
@@ -79,6 +80,16 @@ internal sealed class RanksBridge
         if (_api is not IRanksApi api || !api.IsLoaded(player)) return null;
 
         return _ladder.ProgressToNext(api.GetPoints(player));
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    public PrestigeProgress? ProgressFor(ulong steamId)
+    {
+        if (_api is not IRanksApi api || !api.IsLoaded(steamId)) return null;
+
+        var points = api.GetPoints(steamId);
+
+        return new PrestigeProgress(_ladder.Resolve(points).Level, points, _ladder.ProgressToNext(points)?.Required);
     }
 
     [MethodImpl(MethodImplOptions.NoInlining)]

@@ -40,6 +40,8 @@
   "admin.usage_target": "[red]Usage:[default] {0} <target>",
   "admin.bad_amount": "[red]'{0}' is not a number.",
   "admin.no_target": "[red]No player matched '{0}'.",
+  "admin.ambiguous_target": "[red]More than one player matched '{0}'. Use more of the name, or their SteamID or status id.",
+  "admin.not_loaded": "[red]{0}'s rank data has not loaded yet. Try again in a moment.",
   "admin.adjusted": "[lime]{0}[default] now has [gold]{1}[default] XP.",
   "admin.reset": "[lime]{0}[default] has been reset.",
 

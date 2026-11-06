@@ -1135,7 +1135,9 @@ visible.
 
 Every command is defined in `commands.jsonc` with `Command`, `Aliases` and
 `Permission` (empty = everyone). A command with an empty `Command` string is not
-registered at all, which is how an owner removes one.
+registered at all, which is how an owner removes one. An entry in the file replaces
+its default whole, so its `Aliases` list is the complete set (`[]` registers none);
+a command the file leaves out keeps its shipped definition.
 
 ### FR-CMD-02 — Player commands
 
@@ -1163,6 +1165,11 @@ confirmation screen of its own.
 | `!givepoints <target> <amount>` | `ranks.admin` | Add |
 | `!removepoints <target> <amount>` | `ranks.admin` | Subtract |
 | `!resetrank <target>` | `ranks.admin` | Reset a player |
+
+`<target>` is a name (an exact match wins, otherwise a partial one), a SteamID in
+any notation, the id `status` prints (with or without `#`), or an `@` group. Only a
+group may resolve to several players: an ambiguous name is refused, never applied
+to everyone it matches.
 
 ### FR-CMD-04 — One menu tree, open to modules
 
@@ -1623,7 +1630,12 @@ sealed record RanksPlayerSnapshot(
     long   RoundWins, long RoundLosses,
     long   MatchWins, long MatchLosses,
     long   BombsPlanted, long BombsDefused,
-    DateTime FirstSeen, DateTime LastSeen);
+    DateTime FirstSeen, DateTime LastSeen)
+{
+    public long Headshots { get; init; }
+    public long Hits      { get; init; }
+    public long Misses    { get; init; }
+}
 ```
 
 **It carries no leaderboard position.** `RankIndex` says which tier of the
@@ -1633,9 +1645,12 @@ different question and needs a query, so `GetPositionAsync` stays separate.
 into it would put 64 queries into a map change. Everything in the record above
 is already resident, making a snapshot allocation-only.
 
-The nine counters mirror FR-DB-04's columns exactly, so a rating module
+The twelve counters mirror FR-DB-04's columns exactly, so a rating module
 (FR-MOD-05) can compute from a snapshot without a second `GetStat` call per
-field.
+field. `Headshots`, `Hits` and `Misses` are `init` properties rather than
+positional parameters because the positional constructor is part of the frozen
+contract (FR-API-00). There is no shot total: accuracy is
+`Hits / (Hits + Misses)`, for the reason FR-DB-04 gives.
 
 ### FR-API-03 — Statistics
 
@@ -2104,6 +2119,47 @@ reach players who switched point messages off, and bypass round-end batching.
 detail log and carried on `RaisePointsChanged` (FR-API-04), which other modules
 consume. Translated prose there would make a module-facing identity change with the
 server's language, so the reason stays a stable key and the text travels beside it.
+
+### FR-API-12 — Display data
+
+```csharp
+IReadOnlyList<RanksTier> GetLadder();
+RanksRankIcon GetRankIcon(int points);
+Task<RanksPlayerSnapshot?> LoadSnapshotAsync(ulong steamId);
+
+sealed record RanksTier(int Index, string Name, string Tag, int Points, string Hex);
+sealed record RanksRankIcon(string Mode, int Value);   // Mode is one of RanksDisplayModes
+```
+
+Read-only figures for a plugin that draws core's pages in its own UI — a custom
+menu renderer, of which CustomHUD is the first. Each is a read of core's own
+state, so the dependency still runs one way (§1): core does not know who draws
+its pages.
+
+**Core's menus stay renderer-agnostic** — the stock components FR-CMD-06 lists,
+and nothing aimed at one renderer. A renderer recognises a page by its menu id
+and takes the figures from here, so when it needs more than a page carries, the
+answer is another read-only member — on this API, or on the owning module's, as
+`ICustomCombosApi.GetComboName` and `IPrestigeApi` are — never a
+renderer-specific node in the menu.
+
+- **`GetLadder`** — the operator's tiers, lowest first, as a fresh list per call
+  so it tracks a `ranks.jsonc` reload (NFR-08). `Index` is the same 0-based index
+  as `RanksPlayerSnapshot.RankIndex`. `Hex` is the tier's menu colour, which
+  core's own menus do not draw.
+- **`GetRankIcon`** — what the scoreboard draws for a point total in the
+  configured `Scoreboard.RankMode`: the total itself in Premier, the icon index in
+  Competitive, Wingman and Custom (FR-SCB-03), `0` when Off. It shares the
+  scoreboard's own computation, so a menu drawing the icon cannot drift from it.
+  It answers for a number, not a player, so a display overlay (FR-API-07) does
+  not apply — which is what a `!rank` page wants, since that page shows the
+  stored standing.
+- **`LoadSnapshotAsync`** — `GetSnapshot` for any player. The resident record
+  wins when there is one, because the stored row lags whatever was earned since
+  the last save; otherwise the stored row is read off the game thread (NFR-01).
+  `null` when the player has never been seen, and when the read fails — logged,
+  not thrown. It exists because a leaderboard row is usually an offline player,
+  whom `GetSnapshot` cannot answer for.
 
 ---
 

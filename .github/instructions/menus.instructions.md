@@ -150,6 +150,19 @@ operator's choice, and "the config is being ignored" is never a Ranks bug. Check
 the file path first, then that the menu id matches, then that the menu uses the
 `Buttons` input method (binds do not apply under `Chat`).
 
+### Custom renderers
+
+Menus stay **renderer-agnostic** — stock components, nothing aimed at one
+renderer. A plugin that draws these pages its own way recognises a page by its
+id and takes the figures from the API, so when it needs more than a page
+carries, the answer is a read-only member on the owning plugin's API
+(FR-API-12), **never a renderer-specific node**.
+
+That makes menu ids, and a paged list's row type when it is a contract record
+(`RanksLeaderboardEntry`, a module's `ComboStatRow`), something other plugins
+match on. Renaming either breaks nothing here and silently costs the renderer
+that page.
+
 ### Clan tag updates (scoreboard)
 
 Three steps, all required — without the last two the scoreboard will not reflect

@@ -4,6 +4,7 @@ using Microsoft.Extensions.Primitives;
 using Ranks.Prestige.Api;
 using Ranks.Prestige.Commands;
 using Ranks.Prestige.Config;
+using Ranks.Prestige.Contract;
 using Ranks.Prestige.Menus;
 using Ranks.Prestige.Prestiging;
 using SwiftlyS2.Shared;
@@ -13,7 +14,7 @@ namespace Ranks.Prestige;
 
 [PluginMetadata(
     Id = "Ranks_Prestige",
-    Version = "1.0.0",
+    Version = "1.0.1",
     Name = "Ranks Prestige",
     Author = "Shmitzas",
     Description = "Virtual point deduction and prestige levels for the Ranks plugin.")]
@@ -26,6 +27,7 @@ public sealed class RanksPrestige : BasePlugin
     private PrestigeCommands _commands = null!;
     private PrestigeMenus _menus = null!;
     private RanksBridge _bridge = null!;
+    private PrestigeApi _api = null!;
     private bool _contractLoadFailed;
 
     public RanksPrestige(ISwiftlyCore core) : base(core)
@@ -41,12 +43,16 @@ public sealed class RanksPrestige : BasePlugin
         var ladder = PrestigeLadder.Build(_config, _logger);
 
         _bridge = new RanksBridge(Core, ladder, _config, _logger);
+        _api = new PrestigeApi(_bridge, _config);
         _menus = new PrestigeMenus(Core, _bridge, _config);
         _bridge.AttachMenus(_menus);
         _commands = new PrestigeCommands(Core, _menus, _config, _logger);
 
         _commands.RegisterAll(_commandsConfig);
     }
+
+    public override void ConfigureSharedInterface(IInterfaceManager interfaceManager) =>
+        interfaceManager.AddSharedInterface<IPrestigeApi, PrestigeApi>(IPrestigeApi.InterfaceKey, _api);
 
     /// <remarks>
     /// Acquired here rather than in Load: the shared interface does not exist yet in Load.
@@ -138,7 +144,7 @@ public sealed class RanksPrestige : BasePlugin
             });
 
         _config = BindConfig();
-        _commandsConfig = Core.Configuration.Manager.GetSection("Commands").Get<CommandsConfig>() ?? new CommandsConfig();
+        _commandsConfig = CommandsConfig.Bind(Core.Configuration.Manager.GetSection("Commands"));
 
         // Levels are re-read on every reload and re-applied to everyone present. Command names are
         // not: renaming one needs the old registration dropped, so it stays restart-only.
@@ -149,6 +155,7 @@ public sealed class RanksPrestige : BasePlugin
             _config = incoming;
             _commands?.UpdateConfig(incoming);
             _menus?.UpdateConfig(incoming);
+            _api?.UpdateConfig(incoming);
             _bridge?.UpdateLadder(PrestigeLadder.Build(incoming, _logger), incoming);
         });
     }

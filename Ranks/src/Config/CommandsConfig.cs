@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace Ranks.Config;
@@ -36,7 +37,9 @@ internal sealed class CommandsConfig
     private const string AdminPermission = "ranks.admin";
 
     [Description("Command names, aliases and permissions. Set Command to an empty string to remove a command. Permission empty means everyone.")]
-    public Dictionary<string, CommandDefinition> All { get; set; } = new(StringComparer.OrdinalIgnoreCase)
+    public Dictionary<string, CommandDefinition> All { get; set; } = Defaults();
+
+    private static Dictionary<string, CommandDefinition> Defaults() => new(StringComparer.OrdinalIgnoreCase)
     {
         [Rank] = new() { Command = "rank", Aliases = ["myrank"] },
         [Ranks] = new() { Command = "ranks", Aliases = ["ranklist"] },
@@ -49,11 +52,22 @@ internal sealed class CommandsConfig
         [ResetRank] = new() { Command = "resetrank", Permission = AdminPermission },
     };
 
+    /// <summary>Reads <c>commands.jsonc</c>: an entry in the file replaces its default whole.</summary>
     /// <remarks>
-    /// An alias list is a set, and the binder appends the file's entries onto the model's defaults
-    /// — so the shipped file binds every default alias twice, and registering one twice is at best
-    /// a wasted call.
+    /// Not <c>Get&lt;CommandsConfig&gt;()</c>: the binder appends a file's array onto a non-empty
+    /// list, so a renamed alias registered beside the shipped one instead of replacing it. The
+    /// defaults still seed the generated file, and stand in for an entry the file lacks.
     /// </remarks>
+    public static CommandsConfig Bind(IConfiguration section)
+    {
+        var config = new CommandsConfig { All = new(StringComparer.OrdinalIgnoreCase) };
+        section.Bind(config);
+        foreach (var (key, definition) in Defaults())
+            config.All.TryAdd(key, definition);
+        return config;
+    }
+
+    /// <remarks>An alias list is a set: the same alias written twice would register twice.</remarks>
     public static void Validate(CommandsConfig config, ILogger logger)
     {
         foreach (var definition in config.All.Values)

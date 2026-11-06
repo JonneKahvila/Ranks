@@ -39,6 +39,12 @@ before the handler runs, so an admin command needs no in-body check.
 `registerRaw: true` keeps the console name equal to the configured one instead
 of `sw_<name>`.
 
+**Bind `commands.jsonc` with `CommandsConfig.Bind`, never `Get<CommandsConfig>()`.**
+The binder appends a file's array onto a non-empty list default, so a plain bind
+keeps every shipped alias registered beside the operator's replacement. Core and
+every module with commands bind onto an empty dictionary and only then fill in
+the keys the file lacks (FR-CMD-01).
+
 ### Pattern B: `[Command]` attribute — fixed names only
 
 Correct for any command whose name can never change. **`Ranks` has none**, so
@@ -62,11 +68,11 @@ Members are `Sender` (`IPlayer?`), `IsSentByPlayer`, `Prefix`, `IsSlient`
 `ReplyAsync`. `Sender` is `null` from the server console, so check
 `IsSentByPlayer` before dereferencing it.
 
-> **Whether `Args[0]` is the first argument or the command name is not stated
-> anywhere in the framework docs.** Confirm it once on a live server and fix the
-> indexing everywhere — guessing wrong shifts every argument by one, which
-> parses as a usage error rather than a crash. `CommandName` is available
-> separately either way, so nothing needs `Args` to carry it.
+> **`Args` excludes the command name — `Args[0]` is the first argument.** The
+> framework docs do not say so; the native dispatcher tokenizes the line and erases
+> the command token before handing it over, and `CommandName` carries it instead.
+> Indexing from 1 parses as a usage error rather than a crash, which is how core's
+> admin commands once answered every correctly typed call.
 
 ```csharp
 private void OnGivePoints(ICommandContext context)
@@ -87,6 +93,13 @@ private void OnGivePoints(ICommandContext context)
     }
 }
 ```
+
+### Targets
+
+Resolve a player argument with `Commands/TargetResolver`, never
+`Core.PlayerManager.FindTargettedPlayers` directly: the framework search skips
+players without a pawn and matches nobody when the *sender* has none, so a
+spectating admin targets no one, and it reads a bare `status` id as a name.
 
 ### Permission naming
 

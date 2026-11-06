@@ -22,7 +22,29 @@ public sealed record RanksPlayerSnapshot(
     long BombsPlanted,
     long BombsDefused,
     DateTime FirstSeen,
-    DateTime LastSeen);
+    DateTime LastSeen)
+{
+    /// <remarks>Properties rather than positional parameters: the record's constructor is part of the frozen contract.</remarks>
+    public long Headshots { get; init; }
+
+    /// <summary>Hits plus misses is the shot count — see <c>GetStat</c> for why there is no stored shot total.</summary>
+    public long Hits { get; init; }
+
+    public long Misses { get; init; }
+}
+
+/// <summary>One rung of the operator's ladder.</summary>
+/// <param name="Index">0-based, lowest first — the same index as <see cref="RanksPlayerSnapshot.RankIndex"/>.</param>
+/// <param name="Name">The tier's display name.</param>
+/// <param name="Tag">The short form core writes into the clan tag.</param>
+/// <param name="Points">Inclusive threshold.</param>
+/// <param name="Hex">The colour the operator set for menus, e.g. <c>#B0C3D9</c>.</param>
+public sealed record RanksTier(int Index, string Name, string Tag, int Points, string Hex);
+
+/// <summary>What the scoreboard draws for a point total.</summary>
+/// <param name="Mode">One of <see cref="RanksDisplayModes"/>.</param>
+/// <param name="Value">What core writes to the scoreboard: the point total in Premier, an icon index in the other modes, 0 when Off.</param>
+public sealed record RanksRankIcon(string Mode, int Value);
 
 /// <summary>One row of a leaderboard query.</summary>
 public sealed record RanksLeaderboardEntry(

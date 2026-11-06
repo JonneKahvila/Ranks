@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Ranks.CustomCombos.Combos;
 using Ranks.CustomCombos.Contract;
@@ -36,6 +37,29 @@ internal sealed class CustomCombosApi : ICustomCombosApi
     public void UpdateRules(ComboMatcher matcher) => _matcher = matcher;
 
     public IReadOnlyList<string> ConfiguredCombos => [.. _matcher.Rules.Select(rule => rule.Key)];
+
+    /// <remarks>Same missing-key fallback as the arbiter's chat line, for the same reason.</remarks>
+    public string GetComboName(string comboKey)
+    {
+        var key = $"combo.{comboKey}";
+        var resolved = _core.Localizer[key];
+
+        return string.IsNullOrEmpty(resolved)
+               || string.Equals(resolved, key, StringComparison.Ordinal)
+               || resolved.EndsWith('.' + key, StringComparison.Ordinal)
+            ? comboKey
+            : StripColorTokens(resolved);
+    }
+
+    /// <remarks>
+    /// <c>combo.*</c> names are operator-authored and shared with the arbiter's chat line, so they
+    /// routinely carry chat colour tokens. A menu row wants HTML, so a token left in renders as
+    /// literal <c>{lime}</c> text to the player.
+    /// </remarks>
+    private static string StripColorTokens(string text) =>
+        ColorToken.Replace(text, string.Empty).Trim();
+
+    private static readonly Regex ColorToken = new(@"\{[a-zA-Z]+\}|\[[a-zA-Z]+\]", RegexOptions.Compiled);
 
     public async Task<IReadOnlyList<ComboStatRow>> GetCombosAsync(ulong steamId)
     {

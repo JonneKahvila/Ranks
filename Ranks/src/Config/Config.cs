@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Microsoft.Extensions.Configuration;
 
 namespace Ranks.Config;
 
@@ -16,6 +17,21 @@ public sealed class RanksConfig
     public PointsOptions Points { get; set; } = new();
     public VipOptions Vip { get; set; } = new();
     public GeneralOptions General { get; set; } = new();
+
+    /// <summary>Reads <c>config.jsonc</c>, with <c>Vip.Flags</c> as the file writes it.</summary>
+    /// <remarks>
+    /// The binder appends a file's array onto a non-empty list, so a replaced flag would still
+    /// grant VIP beside the new one. Binding onto an empty list leaves only the file's; the
+    /// default stands in only when the file has no Flags key at all.
+    /// </remarks>
+    internal static RanksConfig Bind(IConfiguration section)
+    {
+        var config = new RanksConfig { Vip = { Flags = [] } };
+        section.Bind(config);
+        if (!section.GetSection("Vip:Flags").Exists() && config.Vip.Flags.Count == 0)
+            config.Vip.Flags = [VipOptions.DefaultFlag];
+        return config;
+    }
 }
 
 public sealed class DatabaseOptions
@@ -198,8 +214,12 @@ public sealed class VipOptions
     /// <remarks>
     /// Namespaced to this plugin so it cannot collide with another's grants, and awards
     /// nothing until an operator grants it — discoverable without being on by accident.
+    /// The value seeds the generated file; <see cref="RanksConfig.Bind"/> keeps the file's list
+    /// from being appended to it.
     /// </remarks>
-    public List<string> Flags { get; set; } = ["@ranks/vip"];
+    public List<string> Flags { get; set; } = [DefaultFlag];
+
+    internal const string DefaultFlag = "@ranks/vip";
 }
 
 public sealed class GeneralOptions

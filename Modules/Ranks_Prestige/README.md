@@ -11,6 +11,7 @@ Prestige levels for the [Ranks](../../README.md) plugin, as a virtual point dedu
 - 🎖️ **Per-level scoreboard mode** - a level can switch between Premier, Competitive, Wingman or Custom
 - ⚡ **Follows every points change** - the display moves with the award, not on a timer
 - 🗄️ **No database, no migration** - the level is derived from points the player already has
+- 🔌 **Published API** - other plugins read each player's level and progress
 
 > [!NOTE]
 > **Nothing is deducted from the player's real total.** Points, stats and the database row are
@@ -173,6 +174,33 @@ Points change → resolve level → displayed = points − threshold → core dr
 - Below the first threshold the overlay is cleared, so an unpromoted player is drawn exactly as core would.
 - Overlays are session-scoped: they vanish on disconnect and on unload.
 - Config reloads re-resolve everyone present immediately.
+
+---
+
+## For plugin developers
+
+The module publishes `Ranks.Prestige.Api.v1`. Reference `Ranks_Prestige.Contract.dll` from this
+module's `resources/exports/` — **do not copy it next to your plugin**, or the host loads a second
+one, the interface gets two type identities, and binding silently stops matching. (The copy beside
+`Ranks_Prestige.dll` is this module's own load-time fallback — ignore it.)
+
+```csharp
+public sealed record PrestigeProgress(int Level, int Points, int? NextLevelPoints);
+
+public interface IPrestigeApi
+{
+    const string InterfaceKey = "Ranks.Prestige.Api.v1";
+
+    bool IsEnabled { get; }
+    PrestigeProgress? GetProgress(ulong steamId);
+}
+```
+
+`GetProgress` is what `!prestige` shows. `Level` is `0` below the first threshold; `Points` and
+`NextLevelPoints` are absolute totals — the player's real points, and the next level's
+`MinimumPoints` or `null` at the top level. It is synchronous because it reads core's resident
+record, so it answers only for a loaded player, and it returns `null` while `Enabled` is `false` or
+Ranks is absent. `IsEnabled` follows `Enabled` across config reloads.
 
 ---
 

@@ -11,7 +11,7 @@ Operator-defined kill combinations for the [Ranks](../../README.md) plugin.
 - 🥇 **Closest match wins** - escalating tiers pay the most specific, never the sum
 - ➕ **Additive, or replacing** - add a bonus on top, or take the kill over entirely
 - 📊 **Per-combo counters** - `!combos` shows what a player has landed
-- 🔌 **Published API** - other plugins read the same counts
+- 🔌 **Published API** - other plugins read the same counts and combo names
 
 ---
 
@@ -263,6 +263,7 @@ public interface ICustomCombosApi
     Task<IReadOnlyList<ComboStatRow>> GetCombosAsync(ulong steamId);
     Task<ComboStatRow?> GetComboAsync(ulong steamId, string comboKey);
     IReadOnlyList<string> ConfiguredCombos { get; }
+    string GetComboName(string comboKey);
 }
 ```
 
@@ -270,6 +271,11 @@ Both async methods include the player's **unflushed** counts, so a figure read h
 matches what `!combos` prints. `ConfiguredCombos` is synchronous because it reads the
 loaded rule set rather than the database — it is the only way to render a combo an
 operator has configured but nobody has landed yet.
+
+`GetComboName` is the name `!combos` prints for a combo: its `combo.<key>` translation
+with chat colour tokens such as `{lime}` stripped, or the bare key when there is none.
+It is synchronous too, reading the loaded translations in the server's language. It
+always reads `combo.<key>` — a rule's `Message` names only the chat line.
 
 Combo keys are operator-defined, so the set is server-specific: treat an unfamiliar key
 as ordinary data, not an error.
