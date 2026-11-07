@@ -345,8 +345,9 @@ A write that fails and is retried keeps its stamp.
 
 Every list keeps the `customcombos.list` id, because a renderer draws it from its
 `ComboStatRow` items whatever period they belong to; the period picker is
-`customcombos.periods`. Labels and dates match core's own: `Season from yyyy-MM-dd` in UTC, and
-`Before seasons` for period 0.
+`customcombos.periods`. Labels and dates match core's own: the month (`November 2026`) for a
+period that ran exactly one UTC calendar month, `Season from yyyy-MM-dd` in UTC for any other,
+and `Before seasons` for period 0.
 
 **Before seasons stays empty here.** Core's period 0 holds everything it recorded before periods
 were switched on, but this module keeps counts per period only from that moment on — earlier

@@ -23,8 +23,8 @@
 
   // ---- Seasons ------------------------------------------------------------
   //
-  // Only while Ranks runs seasons (its Database.VirtualPurgeMode is "Monthly", or VirtualPurgeDays is above zero). The combos
-  // screen then opens on this season, with an "All time" row and a "Previous seasons" row above
+  // Only while Ranks runs seasons (its Database.VirtualPurgeMode is "Monthly", or VirtualPurgeDays
+  // is above zero). The combos screen then opens on this season, with an "All time" row and a "Previous seasons" row above
   // the list. Worded like Ranks' own season rows, and short: a menu row clips at ~42 characters.
 
   // {0} is one of the labels below, so a title reads "Combos - This season".
@@ -32,8 +32,10 @@
   "menu.combos.current": "This season",
   "menu.combos.alltime": "All time",
   "menu.combos.previous": "Previous seasons",
-  // {0} is the season's first day, as yyyy-MM-dd in UTC.
+  // {0} is the season's first day, as yyyy-MM-dd in UTC. Used for a season that was not exactly one calendar month.
   "menu.combos.season": "Season from {0}",
+  // A season that ran exactly one UTC calendar month. {0} is month.N below, {1} the year.
+  "menu.combos.month": "{0} {1}",
   // Everything recorded before seasons were switched on.
   "menu.combos.initial": "Before seasons",
   "menu.combos.empty_current": "No combos landed this season yet.",
@@ -42,6 +44,20 @@
   // on, so the ones landed earlier are in the All time total instead.
   "menu.combos.empty_initial": "Older combos are counted in All time.",
   "menu.combos.seasons_empty": "No previous seasons yet.",
+
+  // Month names for menu.combos.month, looked up as "month." + 1-12.
+  "month.1": "January",
+  "month.2": "February",
+  "month.3": "March",
+  "month.4": "April",
+  "month.5": "May",
+  "month.6": "June",
+  "month.7": "July",
+  "month.8": "August",
+  "month.9": "September",
+  "month.10": "October",
+  "month.11": "November",
+  "month.12": "December",
 
   // Matching the combos in resources/examples/combos.jsonc.
   "combo.noscope_hs": "{lime}No-scope headshot",

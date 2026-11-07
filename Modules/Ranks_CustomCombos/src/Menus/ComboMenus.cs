@@ -118,13 +118,13 @@ internal sealed class ComboMenus
             .WithTitle(_core.Localizer["menu.combos.previous"])
             .AddHeader(new DividerComponent())
             .WithItemsPerPage(8)
-            .Add(new PagedCollectionComponent<long>(async () =>
+            .Add(new PagedCollectionComponent<PeriodRow>(async () =>
             {
                 try
                 {
                     var periods = await _listPeriods().ConfigureAwait(false);
 
-                    return periods.Where(period => period != current).ToArray();
+                    return LabelPastPeriods(periods, current);
                 }
                 catch (Exception ex)
                 {
@@ -133,10 +133,10 @@ internal sealed class ComboMenus
                 }
             })
             {
-                Formatter = PeriodLabel,
+                Formatter = row => row.Label,
                 OnItemSelected = ctx =>
                 {
-                    var child = BuildList(steamId, ctx.Item, Title(PeriodLabel(ctx.Item)), EmptyTextFor(ctx.Item));
+                    var child = BuildList(steamId, ctx.Item.Period, Title(ctx.Item.Label), EmptyTextFor(ctx.Item.Period));
                     child.Parent = ctx.Session.Menu;
                     child.Open(ctx.Player);
                 },
@@ -148,15 +148,50 @@ internal sealed class ComboMenus
 
     private string Title(string label) => _core.Localizer["menu.combos.title_in", label];
 
+    /// <summary>A past period as the picker lists it, labelled once so the row and the list it opens agree.</summary>
+    private sealed record PeriodRow(long Period, string Label);
+
+    /// <remarks>
+    /// A period's end is the start of the one after it, so labelling needs the whole list: only a
+    /// period that ran exactly one calendar month is named after it, as core does.
+    /// </remarks>
+    private PeriodRow[] LabelPastPeriods(IReadOnlyList<long> periods, long current)
+    {
+        var starts = periods.Append(current).Distinct().Order().ToArray();
+
+        return periods
+            .Where(period => period != current)
+            .Select(period => new PeriodRow(period, PeriodLabel(period, starts.FirstOrDefault(start => start > period))))
+            .ToArray();
+    }
+
     /// <remarks>
     /// Worded and dated exactly as core labels the same period. A period id is the Unix time of its
     /// UTC start, and the date is invariant ISO because the day a period starts is the same fact in
-    /// every locale.
+    /// every locale. <paramref name="nextStart"/> is 0 when no later period exists.
     /// </remarks>
-    private string PeriodLabel(long period) =>
+    private string PeriodLabel(long period, long nextStart) =>
         period == InitialPeriod
             ? _core.Localizer["menu.combos.initial"]
-            : _core.Localizer["menu.combos.season", DateTimeOffset.FromUnixTimeSeconds(period).UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)];
+            : IsCalendarMonth(period, nextStart)
+                ? MonthLabel(period)
+                : _core.Localizer["menu.combos.season", DateTimeOffset.FromUnixTimeSeconds(period).UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)];
+
+    /// <remarks>Month names come from the translation file (<c>month.1</c> … <c>month.12</c>), not the server's culture.</remarks>
+    private string MonthLabel(long period)
+    {
+        var start = DateTimeOffset.FromUnixTimeSeconds(period).UtcDateTime;
+        return _core.Localizer["menu.combos.month", _core.Localizer[$"month.{start.Month}"], start.Year];
+    }
+
+    /// <remarks>The same test Ranks applies (FR-DB-10), repeated here because its helper is internal to it.</remarks>
+    private static bool IsCalendarMonth(long start, long end)
+    {
+        var first = DateTimeOffset.FromUnixTimeSeconds(start).UtcDateTime;
+
+        return first is { Day: 1, TimeOfDay.Ticks: 0 }
+            && new DateTimeOffset(first.AddMonths(1)).ToUnixTimeSeconds() == end;
+    }
 
     /// <remarks>
     /// Combos are kept per period only from the moment periods were switched on, so the period

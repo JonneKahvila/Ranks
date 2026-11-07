@@ -115,14 +115,14 @@ internal sealed class WeaponStatsMenus
             .WithTitle(_core.Localizer["menu.period.title"])
             .AddHeader(new DividerComponent())
             .WithItemsPerPage(8)
-            .Add(new PagedCollectionComponent<long>(async () =>
+            .Add(new PagedCollectionComponent<PeriodRow>(async () =>
             {
                 try
                 {
                     var current = _writePeriod();
                     var periods = await _listPeriods().ConfigureAwait(false);
 
-                    return periods.Where(period => period != current).ToArray();
+                    return LabelPastPeriods(periods, current);
                 }
                 catch (Exception ex)
                 {
@@ -131,10 +131,10 @@ internal sealed class WeaponStatsMenus
                 }
             })
             {
-                Formatter = PeriodLabel,
+                Formatter = row => row.Label,
                 OnItemSelected = ctx =>
                 {
-                    var child = build(new StatsView(ctx.Item, PeriodLabel(ctx.Item)));
+                    var child = build(new StatsView(ctx.Item.Period, ctx.Item.Label));
                     child.Parent = ctx.Session.Menu;
                     child.Open(ctx.Player);
                 },
@@ -284,14 +284,50 @@ internal sealed class WeaponStatsMenus
         public bool IsAllTime => Period == IWeaponStatsApi.AllTime;
     }
 
+    /// <summary>A past season as the picker lists it, labelled once so the row and the view it opens agree.</summary>
+    private sealed record PeriodRow(long Period, string Label);
+
+    /// <remarks>
+    /// Labelled as core labels the same seasons: a season's end is the start of the one after it, so
+    /// only one that ran exactly one calendar month is named after it.
+    /// </remarks>
+    private PeriodRow[] LabelPastPeriods(IReadOnlyList<long> periods, long? current)
+    {
+        var starts = (current is { } live ? periods.Append(live) : periods).Distinct().Order().ToArray();
+
+        return periods
+            .Where(period => period != current)
+            .Select(period => new PeriodRow(period, PeriodLabel(period, starts.FirstOrDefault(start => start > period))))
+            .ToArray();
+    }
+
     /// <remarks>
     /// Core's wording for core's ids: an id is the Unix time of the season's UTC start, printed as an
     /// invariant ISO date because the day a season starts is the same fact in every locale.
+    /// <paramref name="nextStart"/> is 0 when no later season exists.
     /// </remarks>
-    private string PeriodLabel(long period) =>
+    private string PeriodLabel(long period, long nextStart) =>
         period == BeforeSeasons
             ? _core.Localizer["menu.period.initial"]
-            : _core.Localizer["menu.period.row", DateTimeOffset.FromUnixTimeSeconds(period).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)];
+            : IsCalendarMonth(period, nextStart)
+                ? MonthLabel(period)
+                : _core.Localizer["menu.period.row", DateTimeOffset.FromUnixTimeSeconds(period).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)];
+
+    /// <remarks>Month names come from the translation file (<c>month.1</c> … <c>month.12</c>), not the server's culture.</remarks>
+    private string MonthLabel(long period)
+    {
+        var start = DateTimeOffset.FromUnixTimeSeconds(period).UtcDateTime;
+        return _core.Localizer["menu.period.month", _core.Localizer[$"month.{start.Month}"], start.Year];
+    }
+
+    /// <remarks>The same test core applies (FR-DB-10), repeated here because core's helper is internal to it.</remarks>
+    private static bool IsCalendarMonth(long start, long end)
+    {
+        var first = DateTimeOffset.FromUnixTimeSeconds(start).UtcDateTime;
+
+        return first is { Day: 1, TimeOfDay.Ticks: 0 }
+            && new DateTimeOffset(first.AddMonths(1)).ToUnixTimeSeconds() == end;
+    }
 
     private static double Percent(long part, long whole) => whole == 0 ? 0 : Math.Round(part * 100.0 / whole, 1);
 

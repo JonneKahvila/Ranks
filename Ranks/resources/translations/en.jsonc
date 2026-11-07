@@ -140,14 +140,33 @@
   "menu.top.alltime": "All time",
   "menu.top.previous": "Previous seasons",
 
-  // {0} is the season's first day, as yyyy-MM-dd in UTC.
   "menu.period.title": "Previous seasons",
+  // {0} is the season's first day, as yyyy-MM-dd in UTC. Used for a season that was not exactly one calendar month.
   "menu.period.row": "Season from {0}",
+  // A season that ran exactly one UTC calendar month. {0} is month.N below, {1} the year.
+  "menu.period.month": "{0} {1}",
   // Everything recorded before seasons were switched on.
   "menu.period.initial": "Before seasons",
-  // {0} is yyyy-MM-dd HH:mm in UTC.
-  "menu.period.ends": "Season ends {0} UTC",
+  // {0} is the date the season ends, yyyy-MM-dd; it turns over at 00:00 UTC that day.
+  // Keep it short: a row wider than the menu is cut off.
+  "menu.period.ends": "Season ends {0}",
+  // Replaces menu.period.ends while the current season is a calendar month. {0} is menu.period.month.
+  "menu.period.current_month": "{0} season",
   "menu.period.empty": "No previous seasons yet.",
+
+  // Month names for menu.period.month, looked up as "month." + 1-12.
+  "month.1": "January",
+  "month.2": "February",
+  "month.3": "March",
+  "month.4": "April",
+  "month.5": "May",
+  "month.6": "June",
+  "month.7": "July",
+  "month.8": "August",
+  "month.9": "September",
+  "month.10": "October",
+  "month.11": "November",
+  "month.12": "December",
 
   // {0} is the player's stored name.
   "menu.playerstats.title": "{0}",

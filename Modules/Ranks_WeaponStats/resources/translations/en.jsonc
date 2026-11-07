@@ -29,21 +29,37 @@
 
   // ---- Seasons ------------------------------------------------------------
   //
-  // Only while core runs seasons (VirtualPurgeMode "Monthly", or VirtualPurgeDays above zero). Both rows under Statistics then
-  // open on these three choices; with it at 0 they open their lists exactly as before. The wording
-  // matches core's own season screens.
+  // Only while core runs seasons (VirtualPurgeMode "Monthly", or VirtualPurgeDays above zero).
+  // Both rows under Statistics then open on these three choices; with seasons off they open their
+  // lists exactly as before. The wording matches core's own season screens.
 
   "menu.period.current": "This season",
   "menu.period.alltime": "All time",
   "menu.period.previous": "Previous seasons",
 
   "menu.period.title": "Previous seasons",
-  // {0} is the season's first day, as yyyy-MM-dd in UTC.
+  // {0} is the season's first day, as yyyy-MM-dd in UTC. Used for a season that was not exactly one calendar month.
   "menu.period.row": "Season from {0}",
+  // A season that ran exactly one UTC calendar month. {0} is month.N below, {1} the year.
+  "menu.period.month": "{0} {1}",
   // Everything recorded before seasons were switched on. Nothing was kept per season then, so this
   // one always opens empty here; those figures are all under All time.
   "menu.period.initial": "Before seasons",
   "menu.period.empty": "No previous seasons yet.",
+
+  // Month names for menu.period.month, looked up as "month." + 1-12.
+  "month.1": "January",
+  "month.2": "February",
+  "month.3": "March",
+  "month.4": "April",
+  "month.5": "May",
+  "month.6": "June",
+  "month.7": "July",
+  "month.8": "August",
+  "month.9": "September",
+  "month.10": "October",
+  "month.11": "November",
+  "month.12": "December",
 
   // {0} is one of the season labels above.
   "menu.weapons.title_period": "Weapon stats - {0}",

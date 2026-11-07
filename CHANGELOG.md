@@ -31,6 +31,11 @@ Worth updating if your players expect the season to reset on the 1st of the mont
   change. An unknown value is reported at boot and treated as `"Days"`.
 - Switching mode takes effect at the next boundary of the new schedule, never mid-season.
   Every server sharing one database must use the same mode.
+- Under **Previous seasons**, a season that ran exactly one calendar month is now listed by
+  its month, such as "November 2026". Other seasons still read "Season from 2026-11-07".
+- The Leaderboard's season line no longer gets cut off. A monthly season reads "November 2026
+  season"; any other reads "Season ends 2026-12-07". The month names are new translation keys,
+  `month.1` to `month.12`.
 
 ---
 

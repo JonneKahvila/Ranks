@@ -39,6 +39,16 @@ internal static class PeriodClock
             ? MonthStartOf(period).AddMonths(1)
             : DateTimeOffset.FromUnixTimeSeconds(DayBlockStartOf(period, grid.Days) + grid.Days * SecondsPerDay).UtcDateTime;
 
+    /// <summary>Whether the period from <paramref name="start"/> to <paramref name="end"/> is exactly one UTC calendar month.</summary>
+    /// <remarks>Judged from the boundaries alone, so a past period is named for what it was, not for today's schedule.</remarks>
+    public static bool IsCalendarMonth(long start, long end)
+    {
+        var first = DateTimeOffset.FromUnixTimeSeconds(start).UtcDateTime;
+
+        return first is { Day: 1, TimeOfDay.Ticks: 0 }
+            && new DateTimeOffset(first.AddMonths(1)).ToUnixTimeSeconds() == end;
+    }
+
     private static long DayBlockStartOf(long unixSeconds, int days)
     {
         var length = days * SecondsPerDay;
