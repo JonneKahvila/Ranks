@@ -674,7 +674,7 @@ are `[Obsolete]` and throw at runtime.
 - [ ] Deltas survive a failed flush and land on the retry
 - [ ] Command names grepped against sibling plugins
 - [ ] No identifier named `rank`
-- [ ] With core's seasons off (`VirtualPurgeMode = Days`, `VirtualPurgeDays = 0`), the three `_period` tables stay
+- [ ] With core's seasons off (`VirtualPurgeMode = 0`, `VirtualPurgeDays = 0`), the three `_period` tables stay
       empty and both Statistics rows open their lists directly
 - [ ] With seasons on, a rollover writes the counts still pending into the season
       that closed, and the next shot lands in the new one

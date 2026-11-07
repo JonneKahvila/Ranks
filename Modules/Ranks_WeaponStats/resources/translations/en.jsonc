@@ -29,7 +29,7 @@
 
   // ---- Seasons ------------------------------------------------------------
   //
-  // Only while core runs seasons (VirtualPurgeMode "Monthly", or VirtualPurgeDays above zero).
+  // Only while core runs seasons (VirtualPurgeMode 1, monthly, or VirtualPurgeDays above zero).
   // Both rows under Statistics then open on these three choices; with seasons off they open their
   // lists exactly as before. The wording matches core's own season screens.
 

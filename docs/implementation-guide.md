@@ -408,7 +408,7 @@ effect — but a renamed command needs the restart.
 | `ranks.jsonc` first entry | `Points == 0` | **throw** — a player below the lowest threshold has no rank |
 | `Rank.MinPoints` | `>= 0` | clamp + warn (FR-PTS-05's formula assumes non-negative) |
 | `Database.MaintenanceIntervalHours` | `>= 0` | clamp to `0` + warn (`0` = load-only) |
-| `Database.VirtualPurgeMode` | a defined `VirtualPurgeMode` | reset to `Days` + warn — `VirtualPurgeDays` stays in charge |
+| `Database.VirtualPurgeMode` | `0` (Days) or `1` (Monthly) | reset to `0` + warn — `VirtualPurgeDays` stays in charge. An unknown *name* fails the bind itself, before validation |
 
 Throw for identifiers, clamp for numbers: a bad multiplier is a bad game, a bad
 identifier is a SQL injection surface.

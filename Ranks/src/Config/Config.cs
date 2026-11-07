@@ -56,16 +56,20 @@ public sealed class DatabaseOptions
 
     /// <remarks>
     /// <c>Days</c> follows <c>VirtualPurgeDays</c>; <c>Monthly</c> starts a period on the 1st of
-    /// every UTC calendar month and ignores it (FR-DB-10). Every server sharing a database must
-    /// use the same value.
+    /// every UTC calendar month (FR-DB-10). Every server sharing a database must use the same value.
+    /// <para>
+    /// Written to config.jsonc as its number. An out-of-range one binds silently — ConfigValidator
+    /// resets it.
+    /// </para>
     /// </remarks>
+    [Description("0 Days (a new season every VirtualPurgeDays days), 1 Monthly (a new season at 00:00 UTC on the 1st of every month).")]
     public VirtualPurgeMode VirtualPurgeMode { get; set; } = VirtualPurgeMode.Days;
 
     /// <remarks>
-    /// Read only under <c>VirtualPurgeMode</c> <c>Days</c>. <c>0</c> never starts a new period.
-    /// Above zero, standings restart at <c>Rank.StartPoints</c> every N days on a fixed UTC grid
-    /// and the closed period is kept as history, not deleted (FR-DB-10). Every server sharing a
-    /// database must use the same value.
+    /// <c>0</c> never starts a new period. Above zero, standings restart at <c>Rank.StartPoints</c>
+    /// every N days on a fixed UTC grid and the closed period is kept as history, not deleted
+    /// (FR-DB-10). Under <c>Monthly</c> it only dates the end of a season begun under <c>Days</c>.
+    /// Every server sharing a database must use the same value.
     /// </remarks>
     public int VirtualPurgeDays { get; set; } = 0;
 

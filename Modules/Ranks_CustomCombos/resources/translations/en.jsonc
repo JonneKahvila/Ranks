@@ -23,7 +23,7 @@
 
   // ---- Seasons ------------------------------------------------------------
   //
-  // Only while Ranks runs seasons (its Database.VirtualPurgeMode is "Monthly", or VirtualPurgeDays
+  // Only while Ranks runs seasons (its Database.VirtualPurgeMode is 1, monthly, or VirtualPurgeDays
   // is above zero). The combos screen then opens on this season, with an "All time" row and a "Previous seasons" row above
   // the list. Worded like Ranks' own season rows, and short: a menu row clips at ~42 characters.
 

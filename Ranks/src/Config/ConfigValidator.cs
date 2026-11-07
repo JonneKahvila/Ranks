@@ -60,11 +60,14 @@ internal static partial class ConfigValidator
         if (Enum.IsDefined(database.VirtualPurgeMode)) return;
 
         logger.LogWarning(
-            "Ranks: Database.VirtualPurgeMode '{Value}' is not a known mode; using {Fallback}. Valid values: {Valid}.",
-            (int)database.VirtualPurgeMode, VirtualPurgeMode.Days, string.Join(", ", Enum.GetNames<VirtualPurgeMode>()));
+            "Ranks: Database.VirtualPurgeMode {Value} is not a known mode; using {Fallback}. Valid values: {Valid}.",
+            (int)database.VirtualPurgeMode, AsConfigValue(VirtualPurgeMode.Days),
+            string.Join(", ", Enum.GetValues<VirtualPurgeMode>().Select(AsConfigValue)));
 
         database.VirtualPurgeMode = VirtualPurgeMode.Days;
     }
+
+    private static string AsConfigValue(VirtualPurgeMode mode) => $"{(int)mode} ({mode})";
 
     private static void RequireSafeAffix(string value, string key)
     {

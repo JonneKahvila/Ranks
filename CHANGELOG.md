@@ -24,13 +24,17 @@ Notable changes to Ranks, newest first.
 
 Worth updating if your players expect the season to reset on the 1st of the month.
 
-- New `Database.VirtualPurgeMode` in `config.jsonc`. Set it to `"Monthly"` and a new season
-  starts at 00:00 UTC on the 1st of every month, so seasons follow the calendar instead of
-  drifting by a few days each month. `Database.VirtualPurgeDays` is ignored in that mode.
-- The default, `"Days"`, keeps seasons working exactly as before, so existing configs need no
-  change. An unknown value is reported at boot and treated as `"Days"`.
-- Switching mode takes effect at the next boundary of the new schedule, never mid-season.
-  Every server sharing one database must use the same mode.
+- New `Database.VirtualPurgeMode` in `config.jsonc`. Set it to `1` and a new season starts at
+  00:00 UTC on the 1st of every month, so seasons follow the calendar instead of drifting by a
+  few days each month. Every server sharing one database must use the same value.
+- The default, `0`, keeps seasons working exactly as before, so existing configs need no
+  change. Any other number is reported at boot and treated as `0`.
+- Switching from `0` to `1` does not end the running season early: it lasts until the first 1st
+  on or after its scheduled end, and every season after that starts on the 1st. A season that
+  began on a 1st already counts as a monthly one and ends on the next 1st.
+- Leave `Database.VirtualPurgeDays` at its old value when you switch, because it is how Ranks
+  knows when the running season was due to end. At `0`, that season ends on the first 1st after
+  it began, which may be straight away.
 - Under **Previous seasons**, a season that ran exactly one calendar month is now listed by
   its month, such as "November 2026". Other seasons still read "Season from 2026-11-07".
 - The Leaderboard's season line no longer gets cut off, and it now sits under the title, where

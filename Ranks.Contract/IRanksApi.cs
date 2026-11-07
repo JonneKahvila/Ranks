@@ -183,7 +183,7 @@ public interface IRanksApi
     /// </remarks>
     long CurrentPeriod { get; }
 
-    /// <summary>True while <c>Database.VirtualPurgeMode</c> is <c>Monthly</c>, or <c>VirtualPurgeDays</c> is above zero.</summary>
+    /// <summary>True while <c>Database.VirtualPurgeMode</c> is <c>1</c> (monthly), or <c>VirtualPurgeDays</c> is above zero.</summary>
     bool ArePeriodsEnabled { get; }
 
     /// <summary>When the current period closes, in UTC, or null while periods are disabled.</summary>
