@@ -4,6 +4,7 @@ namespace Ranks.Database;
 
 /// <summary>The migration ledger, scoped to one plugin and one affix set.</summary>
 /// <remarks>
+/// Takes the bare ledger name: AffixingProcessor affixes it and its index like any other table.
 /// Implemented directly rather than subclassing DefaultVersionTableMetaData, whose only
 /// constructor in FluentMigrator 8.x is (IConventionSet, IOptions&lt;RunnerOptions&gt;).
 /// </remarks>
