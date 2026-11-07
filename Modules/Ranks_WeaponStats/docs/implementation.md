@@ -542,7 +542,9 @@ Core raises `PeriodChanged` on the game thread after `CurrentPeriod` has already
 to the new period. The module cuts every live session there and then, stamped with
 `OldPeriod` rather than with the current period, and hands the batch to the writer. A
 cut made before the event — the timer, a disconnect — was already stamped with the old
-period, because core's `CurrentPeriod` only changes inside its rollover.
+period, because core's `CurrentPeriod` only changes inside its rollover. With seasons off
+the cut carries no period: core still raises the event when it follows another server
+sharing the database into a newer season, and the `_period` tables must stay empty.
 
 ---
 
@@ -674,7 +676,7 @@ are `[Obsolete]` and throw at runtime.
 - [ ] Deltas survive a failed flush and land on the retry
 - [ ] Command names grepped against sibling plugins
 - [ ] No identifier named `rank`
-- [ ] With core's seasons off (`VirtualPurgeMode = Days`, `VirtualPurgeDays = 0`), the three `_period` tables stay
+- [ ] With core's seasons off (`VirtualPurgeMode = 0`, `VirtualPurgeDays = 0`), the three `_period` tables stay
       empty and both Statistics rows open their lists directly
 - [ ] With seasons on, a rollover writes the counts still pending into the season
       that closed, and the next shot lands in the new one

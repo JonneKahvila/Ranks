@@ -47,8 +47,8 @@ internal sealed class RanksBridge
     /// <summary>Raised once core reports ready, so the plugin can run its one-shot checks.</summary>
     public event Action? CoreReady;
 
-    /// <summary>Raised on the game thread when core closes a period, with the id of the one that closed.</summary>
-    public event Action<long>? PeriodClosed;
+    /// <summary>Raised on the game thread when core closes a period, with the id of the one that closed — null while periods are off.</summary>
+    public event Action<long?>? PeriodClosed;
 
     /// <summary>Raised on the game thread after core reset a player, with the period it wiped — null while periods are off.</summary>
     public event Action<ulong, long?>? PlayerReset;
@@ -170,7 +170,7 @@ internal sealed class WeaponStatsModule : RanksModuleBase
     private readonly Writer _writer;
     private readonly WeaponStatsMenus _menus;
     private readonly Action _onCoreReady;
-    private readonly Action<long> _onPeriodClosed;
+    private readonly Action<long?> _onPeriodClosed;
     private readonly Action<ulong, long?> _onPlayerReset;
 
     public WeaponStatsModule(
@@ -179,7 +179,7 @@ internal sealed class WeaponStatsModule : RanksModuleBase
         Writer writer,
         WeaponStatsMenus menus,
         Action onCoreReady,
-        Action<long> onPeriodClosed,
+        Action<long?> onPeriodClosed,
         Action<ulong, long?> onPlayerReset)
         : base(api, core)
     {
@@ -230,9 +230,12 @@ internal sealed class WeaponStatsModule : RanksModuleBase
 
     /// <remarks>
     /// Hands on <c>OldPeriod</c>: core raises this after <c>CurrentPeriod</c> has moved, so the counts
-    /// still pending were earned in the period that closed (FR-DB-10).
+    /// still pending were earned in the period that closed (FR-DB-10). Null while periods are off —
+    /// core still moves when another server sharing the database starts a period, and a stamp would
+    /// write the frozen one per period after all.
     /// </remarks>
-    protected override void OnPeriodChanged(RanksPeriodChangedArgs e) => _onPeriodClosed(e.OldPeriod);
+    protected override void OnPeriodChanged(RanksPeriodChangedArgs e) =>
+        _onPeriodClosed(Api.ArePeriodsEnabled ? e.OldPeriod : null);
 
     /// <remarks>
     /// Core wiped the player's current period, which is what this module clears too while periods are

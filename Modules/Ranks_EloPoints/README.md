@@ -218,7 +218,7 @@ considering.
 
 ### Seasons and resets
 
-Seasons are core's: set `Database.VirtualPurgeMode` to `"Monthly"`, or `Database.VirtualPurgeDays`, in **core's** `config.jsonc`. This
+Seasons are core's: set `Database.VirtualPurgeMode` to `1` (monthly), or `Database.VirtualPurgeDays`, in **core's** `config.jsonc`. This
 module has no season setting of its own — it follows core's clock, so the two can never
 disagree about when a season ends.
 
@@ -235,7 +235,7 @@ disagree about when a season ends.
   seasons stay. A player reset mid-match is rated on the rounds after the reset only,
   as if they had just joined.
 
-With seasons off (`VirtualPurgeMode` `"Days"` and `VirtualPurgeDays` at `0`) there is only ever one season: ratings never
+With seasons off (`VirtualPurgeMode` `0` and `VirtualPurgeDays` `0`) there is only ever one season: ratings never
 restart, and nothing above changes how the module behaves — except that a reset now
 sticks.
 

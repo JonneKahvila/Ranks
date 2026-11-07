@@ -183,7 +183,7 @@ public interface IRanksApi
     /// </remarks>
     long CurrentPeriod { get; }
 
-    /// <summary>True while <c>Database.VirtualPurgeMode</c> is <c>Monthly</c>, or <c>VirtualPurgeDays</c> is above zero.</summary>
+    /// <summary>True while <c>Database.VirtualPurgeMode</c> is <c>1</c> (monthly), or <c>VirtualPurgeDays</c> is above zero.</summary>
     bool ArePeriodsEnabled { get; }
 
     /// <summary>When the current period closes, in UTC, or null while periods are disabled.</summary>
@@ -191,9 +191,10 @@ public interface IRanksApi
 
     /// <summary>Raised once core has rolled every resident record into the new period.</summary>
     /// <remarks>
-    /// A module holding unwritten counts stamps them with <c>OldPeriod</c>; a module keeping its own
-    /// authoritative value per player (a rating) must drop it here, or its next write restores last
-    /// period's number over core's fresh one.
+    /// A module holding unwritten counts stamps them with <c>OldPeriod</c> — only while
+    /// <see cref="ArePeriodsEnabled"/>, because core also follows another server sharing the database
+    /// into a newer period with its own periods off. A module keeping its own authoritative value per
+    /// player (a rating) must drop it here, or its next write restores last period's number over core's fresh one.
     /// </remarks>
     event Action<RanksPeriodChangedArgs> PeriodChanged;
 

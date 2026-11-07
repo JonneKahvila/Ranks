@@ -325,7 +325,7 @@ core's. Lists the caller's combos and counts, ordered by count.
 
 ### 7.1 Seasons
 
-Core owns the calendar (FR-DB-10): with seasons on (`Database.VirtualPurgeMode` `Monthly`, or `VirtualPurgeDays` above zero) it closes one
+Core owns the calendar (FR-DB-10): with seasons on (`Database.VirtualPurgeMode` `1`, or `VirtualPurgeDays` above zero) it closes one
 period and opens the next, and a module follows its events rather than keeping a clock or a
 setting of its own. Every write then lands twice, in one transaction — added to the lifetime
 row exactly as before, and to the row of the period the count was earned in. Both writes are
@@ -334,7 +334,7 @@ additive, so two servers sharing a database still accumulate rather than clobber
 **The period travels with the count.** The counters hold none; each drain on the game thread
 stamps what it takes with core's current period, or with nothing while periods are off. Core
 changes period only on the game thread, and when it does the module drains at once, stamped
-with the period just closed, so a count earned before the boundary cannot be filed after it.
+with the period just closed (with nothing, while periods are off), so a count earned before the boundary cannot be filed after it.
 A write that fails and is retried keeps its stamp.
 
 | Screen | Periods off | Periods on |

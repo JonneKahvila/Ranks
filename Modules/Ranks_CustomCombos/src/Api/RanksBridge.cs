@@ -248,9 +248,12 @@ internal sealed class CustomCombosModule : RanksModuleBase
 
     /// <remarks>
     /// Cut at once and stamped with the old period: <c>CurrentPeriod</c> already answers the new one,
-    /// and every count still held was earned before the boundary (FR-DB-10).
+    /// and every count still held was earned before the boundary (FR-DB-10). Null while periods are
+    /// off — core still moves when another server sharing the database starts a period, and a stamp
+    /// would write the frozen one per period after all.
     /// </remarks>
-    protected override void OnPeriodChanged(RanksPeriodChangedArgs e) => _ = _writer.FlushAsync(_counters.Drain(e.OldPeriod));
+    protected override void OnPeriodChanged(RanksPeriodChangedArgs e) =>
+        _ = _writer.FlushAsync(_counters.Drain(Api.ArePeriodsEnabled ? e.OldPeriod : null));
 
     /// <remarks>
     /// Core wiped only the current period, so with periods on only that period's counts go and past

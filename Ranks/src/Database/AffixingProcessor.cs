@@ -89,6 +89,7 @@ internal sealed class AffixingProcessor : IMigrationProcessor
     public void Process(CreateTableExpression expression)
     {
         expression.TableName = Affix(expression.TableName);
+        foreach (var column in expression.Columns) AffixPrimaryKey(column);
         _inner.Process(expression);
     }
 
@@ -115,12 +116,14 @@ internal sealed class AffixingProcessor : IMigrationProcessor
     public void Process(CreateColumnExpression expression)
     {
         expression.TableName = Affix(expression.TableName);
+        AffixPrimaryKey(expression.Column);
         _inner.Process(expression);
     }
 
     public void Process(AlterColumnExpression expression)
     {
         expression.TableName = Affix(expression.TableName);
+        AffixPrimaryKey(expression.Column);
         _inner.Process(expression);
     }
 
@@ -233,6 +236,16 @@ internal sealed class AffixingProcessor : IMigrationProcessor
     {
         constraint.TableName = Affix(constraint.TableName);
         constraint.ConstraintName = Affix(constraint.ConstraintName);
+    }
+
+    /// <remarks>
+    /// FluentMigrator names a column's primary key from the bare table name before this sees it.
+    /// PostgreSQL keeps constraint names schema-wide, so a second affix set in one database failed
+    /// CREATE TABLE with <c>relation "PK_ranks_players" already exists</c> (FR-DB-03).
+    /// </remarks>
+    private void AffixPrimaryKey(FluentMigrator.Model.ColumnDefinition column)
+    {
+        if (column.IsPrimaryKey) column.PrimaryKeyName = Affix(column.PrimaryKeyName);
     }
 
     private void AffixForeignKey(FluentMigrator.Model.ForeignKeyDefinition foreignKey)

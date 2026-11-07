@@ -22,32 +22,44 @@ internal static class PeriodClock
     /// <remarks>Monday 5 January 1970 UTC, so a 7-day period starts every Monday rather than on the epoch's Thursday.</remarks>
     private const long AnchorSeconds = 4 * SecondsPerDay;
 
-    /// <summary>The id of the period containing <paramref name="unixSeconds"/>: the Unix time of its start.</summary>
-    /// <remarks>Only meaningful while <paramref name="grid"/> is enabled.</remarks>
-    public static long PeriodFor(long unixSeconds, PeriodGrid grid) =>
-        grid.Mode == VirtualPurgeMode.Monthly
-            ? new DateTimeOffset(MonthStartOf(unixSeconds)).ToUnixTimeSeconds()
-            : DayBlockStartOf(unixSeconds, grid.Days);
+    /// <summary>The period in force at <paramref name="unixSeconds"/>: <paramref name="active"/> until it ends, then the grid's.</summary>
+    /// <remarks>
+    /// Boot and rollover both go through here, so the end a menu shows is when the period turns over.
+    /// Never below <paramref name="active"/>: period ids only rise (FR-DB-10).
+    /// </remarks>
+    public static long Due(long active, long unixSeconds, PeriodGrid grid) =>
+        unixSeconds < UnixOf(EndOf(active, grid)) ? active : Math.Max(PeriodFor(unixSeconds, grid), active);
 
-    /// <summary>When the period that started at <paramref name="period"/> closes: the first grid boundary after it.</summary>
+    /// <summary>When the period that started at <paramref name="period"/> closes: a boundary of <paramref name="grid"/>.</summary>
     /// <remarks>
     /// Not simply start plus one period: after the schedule changes, the active period may have
     /// started on the old grid, and only a boundary of the new one closes it.
     /// </remarks>
     public static DateTime EndOf(long period, PeriodGrid grid) =>
         grid.Mode == VirtualPurgeMode.Monthly
-            ? MonthStartOf(period).AddMonths(1)
-            : DateTimeOffset.FromUnixTimeSeconds(DayBlockStartOf(period, grid.Days) + grid.Days * SecondsPerDay).UtcDateTime;
+            ? MonthlyEndOf(period, grid.Days)
+            : DateTimeOffset.FromUnixTimeSeconds(DayBlockEndOf(period, grid.Days)).UtcDateTime;
 
     /// <summary>Whether the period from <paramref name="start"/> to <paramref name="end"/> is exactly one UTC calendar month.</summary>
     /// <remarks>Judged from the boundaries alone, so a past period is named for what it was, not for today's schedule.</remarks>
-    public static bool IsCalendarMonth(long start, long end)
-    {
-        var first = DateTimeOffset.FromUnixTimeSeconds(start).UtcDateTime;
+    public static bool IsCalendarMonth(long start, long end) =>
+        IsMonthStart(start) && UnixOf(MonthStartOf(start).AddMonths(1)) == end;
 
-        return first is { Day: 1, TimeOfDay.Ticks: 0 }
-            && new DateTimeOffset(first.AddMonths(1)).ToUnixTimeSeconds() == end;
-    }
+    /// <summary>The id of the period containing <paramref name="unixSeconds"/>: the Unix time of its start.</summary>
+    /// <remarks>Only meaningful while <paramref name="grid"/> is enabled.</remarks>
+    private static long PeriodFor(long unixSeconds, PeriodGrid grid) =>
+        grid.Mode == VirtualPurgeMode.Monthly
+            ? UnixOf(MonthStartOf(unixSeconds))
+            : DayBlockStartOf(unixSeconds, grid.Days);
+
+    /// <remarks>
+    /// A period not starting on the 1st began under <c>Days</c>. It keeps its N-day end and runs on to the
+    /// next 1st, so a switch never resets anyone mid-month; with N at 0 it closes at the first 1st after it began.
+    /// </remarks>
+    private static DateTime MonthlyEndOf(long period, int days) =>
+        IsMonthStart(period) || days <= 0
+            ? MonthStartOf(period).AddMonths(1)
+            : FirstMonthStartFrom(DayBlockEndOf(period, days));
 
     private static long DayBlockStartOf(long unixSeconds, int days)
     {
@@ -58,9 +70,19 @@ internal static class PeriodClock
         return unixSeconds - intoPeriod;
     }
 
+    private static long DayBlockEndOf(long period, int days) => DayBlockStartOf(period, days) + days * SecondsPerDay;
+
+    private static bool IsMonthStart(long unixSeconds) =>
+        DateTimeOffset.FromUnixTimeSeconds(unixSeconds).UtcDateTime is { Day: 1, TimeOfDay.Ticks: 0 };
+
+    private static DateTime FirstMonthStartFrom(long unixSeconds) =>
+        IsMonthStart(unixSeconds) ? MonthStartOf(unixSeconds) : MonthStartOf(unixSeconds).AddMonths(1);
+
     private static DateTime MonthStartOf(long unixSeconds)
     {
         var moment = DateTimeOffset.FromUnixTimeSeconds(unixSeconds).UtcDateTime;
         return new DateTime(moment.Year, moment.Month, 1, 0, 0, 0, DateTimeKind.Utc);
     }
+
+    private static long UnixOf(DateTime utc) => new DateTimeOffset(utc).ToUnixTimeSeconds();
 }

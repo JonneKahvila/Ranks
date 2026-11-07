@@ -32,8 +32,9 @@ internal sealed partial class TableNames
         _suffix = NormalizeSuffix(database.TableSuffix);
     }
 
-    /// <summary>The migration ledger for core's own schema.</summary>
-    public string CoreLedger => Resolve(CoreLedgerBaseName);
+    /// <summary>The migration ledger for core's own schema, bare like any name a migration uses.</summary>
+    /// <remarks>AffixingProcessor affixes it. Affixing it here as well doubled the affixes before 1.2.0.</remarks>
+    public string CoreLedger => CoreLedgerBaseName;
 
     /// <summary>False when the operator configured neither affix, so there is nothing to verify.</summary>
     public bool HasAffixes => _prefix.Length > 0 || _suffix.Length > 0;
@@ -60,7 +61,10 @@ internal sealed partial class TableNames
     /// convention, and a module that ever diverges would otherwise get a ledger belonging to
     /// something else (FR-DB-05).
     /// </remarks>
-    public string LedgerFor(string pluginId) => Resolve($"{CoreLedgerBaseName}_{Slug(pluginId)}");
+    public string LedgerFor(string pluginId) => $"{CoreLedgerBaseName}_{Slug(pluginId)}";
+
+    /// <summary>Where builds before 1.2.0 kept <paramref name="ledger"/>: affixed here and again by the processor.</summary>
+    public string LegacyLedger(string ledger) => Resolve(Resolve(ledger));
 
     /// <summary>Caps an identifier at a length every supported engine accepts.</summary>
     /// <remarks>

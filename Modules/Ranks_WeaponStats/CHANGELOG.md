@@ -18,8 +18,10 @@ Notable changes to Ranks_WeaponStats, newest first.
 
 - Under **Previous seasons**, a season that ran exactly one calendar month is now listed by
   its month, such as "November 2026", matching Ranks 1.2.0 with `Database.VirtualPurgeMode`
-  set to `"Monthly"`. Other seasons still read "Season from …". New translation keys:
+  set to `1`. Other seasons still read "Season from …". New translation keys:
   `menu.period.month` and `month.1` to `month.12`.
+- With seasons off, nothing is written to the per-season tables even when Ranks 1.2.0
+  follows another server sharing the database into a new season.
 
 ## [1.1.0] - 2026-11-06
 

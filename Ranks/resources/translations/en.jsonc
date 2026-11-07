@@ -35,7 +35,7 @@
 
   // ---- Seasons ------------------------------------------------------------
   //
-  // Only when seasons are on: Database.VirtualPurgeMode "Monthly", or VirtualPurgeDays above
+  // Only when seasons are on: Database.VirtualPurgeMode 1 (monthly), or VirtualPurgeDays above
   // zero. A season is one period: everyone's rank starts over when it ends, and the season that
   // closed stays browsable under Leaderboard.
 
@@ -147,11 +147,12 @@
   "menu.period.month": "{0} {1}",
   // Everything recorded before seasons were switched on.
   "menu.period.initial": "Before seasons",
-  // {0} is the date the season ends, yyyy-MM-dd; it turns over at 00:00 UTC that day.
-  // Keep it short: a row wider than the menu is cut off.
-  "menu.period.ends": "Season ends {0}",
-  // Replaces menu.period.ends while the current season is a calendar month. {0} is menu.period.month.
-  "menu.period.current_month": "{0} season",
+  // {0} is the season's last full day, yyyy-MM-dd in UTC; the next season starts at 00:00 UTC the
+  // day after. Keep it short: a line wider than the menu is cut off.
+  "menu.period.last_day": "Last day: {0}",
+  // Replaces menu.period.last_day while the current season is a calendar month. {0} is
+  // menu.period.month. Keep it after a colon, so a language can leave the month name uninflected.
+  "menu.period.current_month": "Season: {0}",
   "menu.period.empty": "No previous seasons yet.",
 
   // Month names for menu.period.month, looked up as "month." + 1-12.

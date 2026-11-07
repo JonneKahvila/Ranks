@@ -89,6 +89,8 @@ internal sealed class SchemaMigrator
 
     private void Run(Assembly assembly, string ledger, string pluginId)
     {
+        AdoptLegacyLedger(ledger);
+
         var before = ListTables();
 
         var services = new ServiceCollection()
@@ -119,6 +121,36 @@ internal sealed class SchemaMigrator
         }
 
         VerifyAffixes(before, pluginId);
+    }
+
+    /// <summary>Moves a ledger off the name builds before 1.2.0 gave it by affixing it twice.</summary>
+    /// <remarks>
+    /// Before the runner reads it: under the old name a prefixed install sees an empty ledger and
+    /// runs every migration again. Throws when the tables cannot be read, rather than assume there
+    /// is nothing to move.
+    /// </remarks>
+    private void AdoptLegacyLedger(string ledger)
+    {
+        var legacy = _tables.LegacyLedger(ledger);
+        var current = _tables.Resolve(ledger);
+        if (string.Equals(legacy, current, StringComparison.OrdinalIgnoreCase)) return;
+
+        using var connection = _database.Create();
+        connection.Open();
+
+        switch (DatabaseTables.RenameIfOnlyOld(connection, Driver, legacy, current))
+        {
+            case TableRename.Renamed:
+                _logger.LogInformation("Ranks: renamed migration ledger {Legacy} to {Current}.", legacy, current);
+                break;
+
+            case TableRename.BothExist:
+                _logger.LogWarning(
+                    "Ranks: migration ledgers {Legacy} and {Current} both exist; the second is used. " +
+                    "Drop the first once you no longer need it.",
+                    legacy, current);
+                break;
+        }
     }
 
     /// <summary>The module's assembly file, which <see cref="ModuleMigrationContext"/> loads a second time.</summary>
@@ -277,36 +309,19 @@ internal sealed class SchemaMigrator
 
     private HashSet<string> ListTables()
     {
-        var sql = _database.Info.Driver?.Trim().ToLowerInvariant() switch
-        {
-            "mysql" or "mariadb" => "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE()",
-            "postgresql" or "postgres" or "pgsql" => "SELECT tablename FROM pg_tables WHERE schemaname = current_schema()",
-            "sqlite" => "SELECT name FROM sqlite_master WHERE type = 'table'",
-            _ => null,
-        };
-
-        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        if (sql is null) return names;
-
         try
         {
             using var connection = _database.Create();
             connection.Open();
 
-            using var command = connection.CreateCommand();
-            command.CommandText = sql;
-
-            using var reader = command.ExecuteReader();
-            while (reader.Read())
-                if (!reader.IsDBNull(0))
-                    names.Add(reader.GetString(0));
+            return DatabaseTables.List(connection, Driver);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Ranks: could not list existing tables; affix verification is skipped this run.");
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
-
-        return names;
     }
+
+    private string Driver => _database.Info.Driver?.Trim().ToLowerInvariant() ?? string.Empty;
 }
