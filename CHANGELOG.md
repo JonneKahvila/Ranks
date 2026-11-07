@@ -20,14 +20,17 @@ Notable changes to Ranks, newest first.
 
      See .github/instructions/changelog.instructions.md for the full style. -->
 
+---
+
 ## [1.2.0] - 2026-11-07
 
-Worth updating if you run MySQL or MariaDB, or if your players expect the season to reset on
-the 1st of the month.
+Worth updating if you run MySQL or MariaDB, or if your players expect the season to
+reset on the 1st of the month. Includes the work versioned 1.1.1, which was never
+released on its own.
 
 - Players whose names contain emoji or special letters (such as 𝓩) were never saved on
-  MySQL/MariaDB, so their progress was lost whenever the server restarted or Ranks reloaded;
-  the log showed `skipped <SteamID> in this save pass` for them on every save. They are saved
+  MySQL/MariaDB: the log showed `skipped <SteamID> in this save pass` on every save, and
+  their progress was lost whenever the server restarted or Ranks reloaded. They are saved
   from now on, but progress already lost cannot be recovered.
 - The first boot converts the `name` column of `ranks_players` and `ranks_players_history`
   to `utf8mb4`. On a host that does not allow schema changes, run this by hand (add your
@@ -41,7 +44,10 @@ the 1st of the month.
   awp_ranks_migrations;`.
 - On PostgreSQL, a second Ranks with a different `Database.TablePrefix` or `TableSuffix` in the
   same database failed to create its tables (`relation "PK_ranks_players" already exists`).
-  Primary keys now carry the prefix and suffix too; tables that already exist keep theirs.
+  Primary keys now carry the prefix and suffix too. Tables that already exist keep theirs.
+- The `Plugin 'Ranks' uses obsolete API: ...ISchedulerService.NextTickAsync` warning no
+  longer appears when Ranks loads. It was a false alarm from SwiftlyS2's own check, not a
+  fault in Ranks.
 - New `Database.VirtualPurgeMode` in `config.jsonc`. Set it to `1` and a new season starts at
   00:00 UTC on the 1st of every month, so seasons follow the calendar instead of drifting by a
   few days each month.
@@ -60,25 +66,11 @@ the 1st of the month.
   its month, such as "November 2026". Other seasons still read "Season from 2026-11-07".
 - The Leaderboard's season line no longer gets cut off, and it now sits under the title, where
   the selection skips it, instead of being a row that did nothing when selected. A monthly
-  season reads "Season: November 2026"; any other shows its last day, "Last day: 2026-12-06".
+  season reads "Season: November 2026", and any other shows its last day, such as
+  "Last day: 2026-12-06".
 - If you run your own translation file, add `menu.period.month`, `menu.period.current_month`,
   `menu.period.last_day` and `month.1` to `month.12`, and remove `menu.period.ends`. A missing
   key shows in game as raw text.
-
----
-
-## [1.1.1] - 2026-11-07
-
-Worth updating if you run MySQL or MariaDB.
-
-- Players whose names contain emoji or special letters (such as 𝓩) were never saved on
-  MySQL/MariaDB: their points and statistics were lost at every map change and disconnect.
-  They are saved from now on, but progress already lost cannot be recovered.
-- The first boot converts the `name` column of `ranks_players` and `ranks_players_history`
-  to `utf8mb4`. On a host that does not allow schema changes, run this by hand (add your
-  table prefix/suffix): `ALTER TABLE ranks_players MODIFY COLUMN name VARCHAR(128) CHARACTER
-  SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '';` and the same for
-  `ranks_players_history`. PostgreSQL and SQLite were not affected.
 
 ## [1.1.0] - 2026-11-06
 
