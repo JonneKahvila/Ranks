@@ -171,9 +171,9 @@ independent settings, **both empty by default**:
   from every player having vanished. Normalising makes that edit a no-op.
 - Values must match `^[A-Za-z0-9_]*$`. These become SQL identifiers, so anything
   else **throws at load** rather than being escaped or stripped.
-- All affixing goes through one resolver. Every table, index and migration
-  version table routes through it — including tables owned by modules, which
-  obtain names via `IRanksApi.ResolveTableName` (FR-API-06).
+- All affixing goes through one resolver, exactly once. Every table, index,
+  primary key and migration version table routes through it — including tables
+  owned by modules, which obtain names via `IRanksApi.ResolveTableName` (FR-API-06).
 - Changing either value points the server at a different table set. It requires
   a restart (NFR-08) and migrates nothing.
 
@@ -297,6 +297,14 @@ plugin id, collapse every non-alphanumeric run to `_`, strip a leading `ranks_`,
 prepend `ranks_migrations_`, then apply the FR-DB-03 affixes.
 `Ranks_WeaponStats` → `ranks_migrations_weaponstats`. SwiftlyS2 plugin ids are
 already unique per host, so the output is too.
+
+> **The affixes are applied once, by the processor.** The ledger name reaches
+> FluentMigrator bare, exactly like `"ranks_players"` in a migration, and
+> `AffixingProcessor` affixes it with everything else. Releases before 1.2.0
+> affixed it before handing it over as well, so a prefixed server's ledger was
+> `awp_awp_ranks_migrations`. 1.2.0 renames such a ledger before reading it;
+> left under the old name, the server would find an empty ledger and run every
+> migration again.
 
 > **The input is the `[PluginMetadata] Id`, never the folder name.** They match
 > by convention — modules are named `Ranks_<Name>` throughout — but the rule
@@ -477,7 +485,9 @@ term *season*; the code says *period*.
   board would count that row twice.
 - **Only older rows are closed.** A row on a *newer* period means another server
   crossed the boundary first; this server catches up rather than archiving that
-  period backwards.
+  period backwards — to that very period, even when its own schedule has not
+  reached it (a different mode, a clock a little behind, periods off), because
+  the alternative restarts the player in an older season.
 - **Switching it off freezes the period** rather than starting one: core resumes
   the newest period the data holds. Switching it on starts the first period at
   once, with everything before it under "Before seasons".
@@ -2279,10 +2289,12 @@ own. Core is the only clock (FR-DB-10), so these are the whole interface to it.
 
 - **`CurrentPeriod` changes only inside core's rollover**, on the game thread, so
   a module stamping its rows with it agrees with core about which period a write
-  belongs to. While periods are off it stays on the newest period the data holds.
+  belongs to. While periods are off it stays on the newest period the data holds,
+  following another server sharing the database into a newer one (FR-DB-10).
 - **`PeriodChanged` fires after the move.** By then `CurrentPeriod` already
   answers `NewPeriod`, which is why the payload carries `OldPeriod`: the period a
-  module stamps on counts it was still holding. A module keeping an
+  module stamps on counts it was still holding — only while `ArePeriodsEnabled`,
+  because that catch-up raises it with periods off too. A module keeping an
   authoritative value per player must drop it here.
 - **`PlayerReset` fires after core cleared the player's current period.** A
   module clears the same, and keeps the player's past periods.

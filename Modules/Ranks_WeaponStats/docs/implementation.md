@@ -542,7 +542,9 @@ Core raises `PeriodChanged` on the game thread after `CurrentPeriod` has already
 to the new period. The module cuts every live session there and then, stamped with
 `OldPeriod` rather than with the current period, and hands the batch to the writer. A
 cut made before the event — the timer, a disconnect — was already stamped with the old
-period, because core's `CurrentPeriod` only changes inside its rollover.
+period, because core's `CurrentPeriod` only changes inside its rollover. With seasons off
+the cut carries no period: core still raises the event when it follows another server
+sharing the database into a newer season, and the `_period` tables must stay empty.
 
 ---
 

@@ -615,6 +615,16 @@ Expressions carrying a table name: `CreateTable`, `DeleteTable`, `AlterTable`,
 Miss one and that statement targets an unprefixed table — which on a prefixed
 server means it silently operates on nothing, or on another server's data.
 
+> **A primary key declared on a column carries a name of its own.** FluentMigrator
+> fills `ColumnDefinition.PrimaryKeyName` from the *bare* table name
+> (`PK_ranks_players`) before the processor sees the expression, so `CreateTable`,
+> `CreateColumn` and `AlterColumn` affix it as well. MySQL names every primary key
+> `PRIMARY` and SQLite scopes constraints to their table, but PostgreSQL keeps
+> them schema-wide: before 1.2.0 the second affix set in one database failed
+> `CREATE TABLE` with `relation "PK_ranks_players" already exists`. Tables created
+> earlier keep their unaffixed names, so on PostgreSQL an install *without*
+> affixes still cannot join a database where an older prefixed one lives.
+
 > **Rewrite the existence checks too, not just the expressions.**
 > `IMigrationProcessor` also implements `IQuerySchema` — `SchemaExists`,
 > `TableExists`, `ColumnExists`, `ConstraintExists`, `IndexExists`,
@@ -708,6 +718,14 @@ The ledger name is `ranks_migrations` for core, and for a module:
 lowercase(pluginId) → non-alphanumeric runs to "_" → strip leading "ranks_"
                     → prepend "ranks_migrations_" → apply affixes
 ```
+
+**Hand the ledger to `AffixedVersionTable` bare.** The last step belongs to
+`AffixingProcessor`, which affixes the ledger, its index and every table alike;
+affixing it beforehand too is what named a prefixed ledger
+`awp_awp_ranks_migrations` before 1.2.0. `SchemaMigrator.AdoptLegacyLedger`
+renames such a ledger before the runner reads it — under the old name the
+server sees an empty ledger and runs every migration again — and throws rather
+than guess when it cannot list the tables.
 
 ⚠️ **Cap the result at 63 characters.** MySQL allows 64 and **PostgreSQL 63 —
 truncating silently**, which can merge two modules' ledgers back into one and
@@ -1537,7 +1555,8 @@ flag the handshake does not reset.
   ever will.
 - Follow core's period (FR-DB-10) rather than keeping a clock: stamp each write
   with the period captured on the game thread when the figures were earned, flush
-  what you hold with `OldPeriod` in `OnPeriodChanged`, and clear the player's
+  what you hold with `OldPeriod` in `OnPeriodChanged` (unstamped while
+  `ArePeriodsEnabled` is false — core still catches up then), and clear the player's
   current period in `OnPlayerReset`. Never change an existing table's key to add
   a period — add a `_period` or `_history` table with the composite key inline.
 
