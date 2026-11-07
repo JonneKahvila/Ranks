@@ -122,8 +122,13 @@ internal sealed class PlayerSessions
         var grid = CurrentGrid;
         if (!grid.IsEnabled) return;
 
+        RollOverTo(PeriodClock.Due(ActivePeriod, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), grid));
+    }
+
+    /// <summary>Moves every resident record into <paramref name="due"/> when it is later than the active period.</summary>
+    private void RollOverTo(long due)
+    {
         var closed = ActivePeriod;
-        var due = PeriodClock.Due(closed, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), grid);
         if (due <= closed) return;
 
         Volatile.Write(ref _activePeriod, due);
@@ -307,11 +312,27 @@ internal sealed class PlayerSessions
     /// </remarks>
     private void AlignPeriod(PlayerRecord loaded)
     {
-        if (loaded.Period > ActivePeriod) RollOverIfDue();
+        if (loaded.Period > ActivePeriod) CatchUp(loaded.Period);
         if (loaded.Period == ActivePeriod) return;
 
         var startPoints = _config.Current.Rank.StartPoints;
         loaded.StartPeriod(ActivePeriod, startPoints, _ladder.IndexFor(startPoints));
+    }
+
+    /// <summary>Moves this server into a period another server sharing the database has started.</summary>
+    /// <remarks>
+    /// Even when its own schedule has not reached that period — a different mode, a clock a little
+    /// behind, periods off — because the alternative moves the loaded record back, archiving the
+    /// player's live season and restarting them in an older one (FR-DB-10).
+    /// </remarks>
+    private void CatchUp(long newer)
+    {
+        if (!SchemaUsable) return;
+
+        var grid = CurrentGrid;
+        var due = grid.IsEnabled ? PeriodClock.Due(ActivePeriod, DateTimeOffset.UtcNow.ToUnixTimeSeconds(), grid) : ActivePeriod;
+
+        RollOverTo(Math.Max(newer, due));
     }
 
     /// <remarks>

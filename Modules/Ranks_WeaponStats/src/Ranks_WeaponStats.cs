@@ -245,13 +245,13 @@ public sealed class RanksWeaponStats : BasePlugin
         _ = _writer.FlushAsync(_collector.DetachAll());
     }
 
-    /// <summary>Writes everything still pending into the period that just closed (FR-DB-10).</summary>
+    /// <summary>Writes everything still pending into the period that just closed, or all time only while periods are off (FR-DB-10).</summary>
     /// <remarks>
     /// Stamped from the event rather than from <see cref="WritePeriod"/>, which already answers the new
     /// period by the time core raises it. Skipped like <see cref="FlushNow"/> while the writer is not
     /// configured, though core cannot close a period before it is ready.
     /// </remarks>
-    private void OnPeriodClosed(long closedPeriod)
+    private void OnPeriodClosed(long? closedPeriod)
     {
         if (!_writer.IsReady) return;
 
