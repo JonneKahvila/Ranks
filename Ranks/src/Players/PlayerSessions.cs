@@ -269,15 +269,17 @@ internal sealed class PlayerSessions
             {
                 await Task.Delay(AuthPollIntervalMs).ConfigureAwait(false);
 
-                var settled = await _core.Scheduler.NextTickAsync(() =>
+                // Not NextTickAsync<T>(Func<T>): SwiftlyS2's obsolete-API scanner misreads it as the async overload.
+                var settled = false;
+                await _core.Scheduler.NextTickAsync(() =>
                 {
                     var player = _core.PlayerManager.GetPlayer(slot);
 
-                    if (player is null || player.IsFakeClient) return true;
-                    if (player.SteamID == 0) return false;
+                    if (player is null || player.IsFakeClient) { settled = true; return; }
+                    if (player.SteamID == 0) return;
 
                     Track(player);
-                    return true;
+                    settled = true;
                 }).ConfigureAwait(false);
 
                 if (settled) return;

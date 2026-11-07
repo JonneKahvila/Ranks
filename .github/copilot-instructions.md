@@ -508,15 +508,23 @@ Core.Scheduler.NextWorldUpdate(() =>
 ### `NextWorldUpdateAsync` — main-thread data from an async context
 
 ```csharp
-var players = await Core.Scheduler.NextWorldUpdateAsync(() =>
-    Core.PlayerManager.GetAllValidPlayers()
+List<ulong> players = [];
+await Core.Scheduler.NextWorldUpdateAsync(() =>
+{
+    players = Core.PlayerManager.GetAllValidPlayers()
         .Where(p => !p.IsFakeClient)
         .Select(p => p.SteamID)
-        .ToList());
+        .ToList();
+});
 
 foreach (var steamId in players)
     await SaveRecordAsync(steamId);
 ```
+
+Return results through a captured local, not the value-returning `Func<T>`
+overload. That overload works, but SwiftlyS2's load-time obsolete-API scanner
+cannot tell it from the throwing `Func<Task<T>>` one and logs a false
+`Plugin 'Ranks' uses obsolete API` warning.
 
 ### ⚠️ `Repeat*` fires the first callback immediately
 

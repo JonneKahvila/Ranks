@@ -1592,7 +1592,11 @@ Core.Scheduler.NextTick(() => ApplyToPawn(record));            // correct
 ```
 
 This is why the reflection dump shows several same-looking `Func\`1` overloads —
-the extra ones are the obsolete traps, not useful alternatives.
+the extra ones are the obsolete traps. The one safe generic overload,
+`NextTickAsync<T>(Func<T>)` / `NextWorldUpdateAsync<T>(Func<T>)`, is avoided too:
+SwiftlyS2's load-time obsolete-API scanner compares only the `Func\`1` and reports
+it as the async trap (`Plugin 'Ranks' uses obsolete API: …NextTickAsync`). Return
+a value through a captured local and the `Action` overload instead.
 
 ```csharp
 var steamId = player.SteamID;            // capture primitives BEFORE the hop
