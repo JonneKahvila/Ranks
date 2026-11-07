@@ -342,7 +342,7 @@ surface — the outcome a module audit should be hoping for.
 
 ## 8. Seasons (FR-DB-10)
 
-Core's `Database.VirtualPurgeDays` turns on **seasons** — *periods* in the code. This
+Core's `Database.VirtualPurgeMode` / `VirtualPurgeDays` turn on **seasons** — *periods* in the code. This
 module has no season setting of its own: core is the only clock, and the module follows
 `CurrentPeriod`, `PeriodChanged` and `PlayerReset` (FR-API-13). With seasons off it
 behaves exactly as it did before they existed — no per-season writes, the same menus,

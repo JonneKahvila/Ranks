@@ -121,7 +121,7 @@ than making the operator set the same thing twice:
 | `Rank.MinPlayers` | a round played with fewer humans connected is not rated |
 | `Rank.WarmupPoints` | whether warmup rounds are rated |
 | `Rank.BotsEnabled` | with it off, a round against a team made up only of bots is not rated |
-| `Database.VirtualPurgeDays` | how long a season lasts; every rating restarts when one ends |
+| `Database.VirtualPurgeMode` / `VirtualPurgeDays` | how long a season lasts (calendar month or N days); every rating restarts when one ends |
 
 Core still applies `MinPlayers`, `WarmupPoints` and `BotsEnabled` to its statistics with
 `UseCoreRankingLogic` off, and this module rates exactly the rounds core counted, so a
@@ -218,7 +218,7 @@ considering.
 
 ### Seasons and resets
 
-Seasons are core's: set `Database.VirtualPurgeDays` in **core's** `config.jsonc`. This
+Seasons are core's: set `Database.VirtualPurgeMode` to `"Monthly"`, or `Database.VirtualPurgeDays`, in **core's** `config.jsonc`. This
 module has no season setting of its own — it follows core's clock, so the two can never
 disagree about when a season ends.
 
@@ -235,7 +235,7 @@ disagree about when a season ends.
   seasons stay. A player reset mid-match is rated on the rounds after the reset only,
   as if they had just joined.
 
-With `Database.VirtualPurgeDays` at `0` there is only ever one season: ratings never
+With seasons off (`VirtualPurgeMode` `"Days"` and `VirtualPurgeDays` at `0`) there is only ever one season: ratings never
 restart, and nothing above changes how the module behaves — except that a reset now
 sticks.
 
@@ -287,7 +287,7 @@ match has no result until it ends, and a provisional one would be treated as set
 | Warning "this Ranks version has no seasons" | Ranks is older than 1.1.0 | Update Ranks; until then ratings never restart and resets do not clear them |
 | Warning about `UseCoreRankingLogic` | Core is still scoring too | Set it to `false` in core's config |
 | Everyone sits in the bottom tier | Core's point-shaped ladder is still in use | Copy `resources/examples/ranks-elo.jsonc` over core's `ranks.jsonc` |
-| Everyone's rating dropped to the start value | A new season started (`Database.VirtualPurgeDays`) | Expected — last season's final ratings are kept |
+| Everyone's rating dropped to the start value | A new season started (`Database.VirtualPurgeMode` / `VirtualPurgeDays`) | Expected — last season's final ratings are kept |
 | One match was not rated | It was in progress when a season ended | Expected — the next match is rated normally |
 | Ratings barely move | `ConfidenceRounds` shrinking short sessions | Raise `K` before lowering `ConfidenceRounds` |
 | No match is ever rated | Every round played below `Rank.MinPlayers`, in warmup, or against a team of only bots, or no match end | Check core's `MinPlayers` and `BotsEnabled`, and the match config |

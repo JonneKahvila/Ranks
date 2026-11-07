@@ -259,15 +259,16 @@ internal sealed class RankMenus
         if (!periods && entries.Count == 0) return BuildTopList(_api.CurrentPeriod, _core.Localizer["menu.top.title"]);
 
         var builder = _core.Menu.CreateMenu("ranks.top.sections")
-            .WithTitle(_core.Localizer["menu.top.title"])
+            .WithTitle(_core.Localizer["menu.top.title"]);
+
+        if (periods) AddSeasonLine(builder);
+
+        builder
             .AddHeader(new DividerComponent())
             .WithItemsPerPage(8);
 
         if (periods)
         {
-            if (_api.CurrentPeriodEndsAt is { } endsAt)
-                builder.Add(new TextComponent(_core.Localizer["menu.period.ends", Stamp(endsAt)]));
-
             builder
                 .Add(new SubmenuComponent(_core.Localizer["menu.top.current"], _ =>
                     BuildTopList(_api.CurrentPeriod, _core.Localizer["menu.top.current"])))
@@ -390,14 +391,14 @@ internal sealed class RankMenus
             .WithTitle(_core.Localizer["menu.period.title"])
             .AddHeader(new DividerComponent())
             .WithItemsPerPage(8)
-            .Add(new PagedCollectionComponent<long>(async () =>
+            .Add(new PagedCollectionComponent<PeriodRow>(async () =>
             {
                 try
                 {
                     var current = _api.CurrentPeriod;
                     var periods = await _api.GetPeriodsAsync().ConfigureAwait(false);
 
-                    return periods.Where(p => p != current).ToArray();
+                    return LabelPastPeriods(periods, current);
                 }
                 catch (Exception ex)
                 {
@@ -406,10 +407,10 @@ internal sealed class RankMenus
                 }
             })
             {
-                Formatter = PeriodLabel,
+                Formatter = row => row.Label,
                 OnItemSelected = ctx =>
                 {
-                    var child = build(ctx.Item, PeriodLabel(ctx.Item));
+                    var child = build(ctx.Item.Period, ctx.Item.Label);
                     child.Parent = ctx.Session.Menu;
                     child.Open(ctx.Player);
                 },
@@ -419,13 +420,64 @@ internal sealed class RankMenus
             .AddFooter(new DividerComponent())
             .Build();
 
+    /// <summary>A past period as the picker lists it, labelled once so the row and the view it opens agree.</summary>
+    private sealed record PeriodRow(long Period, string Label);
+
+    /// <remarks>
+    /// A period's end is the start of the one after it, so labelling needs the whole list: only a
+    /// period that ran exactly one calendar month is named after it, whatever the schedule is now.
+    /// </remarks>
+    private PeriodRow[] LabelPastPeriods(IReadOnlyList<long> periods, long current)
+    {
+        var starts = periods.Append(current).Distinct().Order().ToArray();
+
+        return periods
+            .Where(period => period != current)
+            .Select(period => new PeriodRow(period, PeriodLabel(period, NextStart(starts, period))))
+            .ToArray();
+    }
+
+    private static long? NextStart(long[] ascendingStarts, long period) =>
+        ascendingStarts.Where(start => start > period).Select(start => (long?)start).FirstOrDefault();
+
     /// <remarks>Dates in invariant ISO form: the day a period starts is the same fact in every locale.</remarks>
-    private string PeriodLabel(long period) =>
+    private string PeriodLabel(long period, long? nextStart) =>
         period == RanksPeriods.Initial
             ? _core.Localizer["menu.period.initial"]
-            : _core.Localizer["menu.period.row", RanksPeriods.StartOf(period).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)];
+            : nextStart is { } end && PeriodClock.IsCalendarMonth(period, end)
+                ? MonthLabel(period)
+                : _core.Localizer["menu.period.row", RanksPeriods.StartOf(period).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)];
 
-    private static string Stamp(DateTime utc) => utc.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
+    /// <summary>Names the current season under the title.</summary>
+    /// <remarks>
+    /// In the header because a header line never takes focus: as a body row the selection landed on
+    /// it first, and pressing select there did nothing, which reads as a broken button.
+    /// </remarks>
+    private void AddSeasonLine(IMenuBuilder builder)
+    {
+        if (_api.CurrentPeriodEndsAt is { } endsAt)
+            builder.AddHeader(new TextComponent(CurrentPeriodLine(_api.CurrentPeriod, endsAt)));
+    }
+
+    /// <remarks>
+    /// Date only: every boundary falls at 00:00 UTC, and a row wider than the menu is cut off, so
+    /// the time added length without adding information.
+    /// </remarks>
+    private string CurrentPeriodLine(long current, DateTime endsAt)
+    {
+        var end = new DateTimeOffset(endsAt).ToUnixTimeSeconds();
+
+        return PeriodClock.IsCalendarMonth(current, end)
+            ? _core.Localizer["menu.period.current_month", MonthLabel(current)]
+            : _core.Localizer["menu.period.ends", endsAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)];
+    }
+
+    /// <remarks>Month names come from the translation file (<c>month.1</c> … <c>month.12</c>), not the server's culture.</remarks>
+    private string MonthLabel(long period)
+    {
+        var start = RanksPeriods.StartOf(period);
+        return _core.Localizer["menu.period.month", _core.Localizer[$"month.{start.Month}"], start.Year];
+    }
 
     // ---- Settings ------------------------------------------------------------
 
