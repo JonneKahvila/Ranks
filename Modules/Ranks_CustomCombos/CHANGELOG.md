@@ -16,12 +16,11 @@ Notable changes to Ranks_CustomCombos, newest first.
 
 ## [1.1.1] - 2026-11-07
 
-- Under **Previous seasons**, a season that ran exactly one calendar month is now listed by
-  its month, such as "November 2026", matching Ranks 1.2.0 with `Database.VirtualPurgeMode`
-  set to `1`. Other seasons still read "Season from …". New translation keys:
-  `menu.combos.month` and `month.1` to `month.12`.
-- With seasons off, nothing is written to `ranks_combos_period` even when Ranks 1.2.0
-  follows another server sharing the database into a new season.
+- **Previous seasons** names a season that ran exactly one calendar month by its month, such
+  as "November 2026", as Ranks 1.2.0 does.
+- If you run your own translation file, add `menu.combos.month` and `month.1` to `month.12`.
+- With seasons off, nothing is written per season, even when Ranks 1.2.0 follows another
+  server into a new season.
 
 ## [1.1.0] - 2026-11-06
 

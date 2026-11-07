@@ -23,16 +23,18 @@
 
   // ---- Seasons ------------------------------------------------------------
   //
-  // Only while Ranks runs seasons (its Database.VirtualPurgeMode is 1, monthly, or VirtualPurgeDays
-  // is above zero). The combos screen then opens on this season, with an "All time" row and a "Previous seasons" row above
-  // the list. Worded like Ranks' own season rows, and short: a menu row clips at ~42 characters.
+  // Only while Ranks runs seasons (its Database.VirtualPurgeMode is 1, monthly, or
+  // VirtualPurgeDays is above zero). The combos screen then opens on this season, with an
+  // "All time" row and a "Previous seasons" row above the list. Worded like Ranks' own season
+  // rows, and short: a menu row clips at ~42 characters.
 
   // {0} is one of the labels below, so a title reads "Combos - This season".
   "menu.combos.title_in": "Combos - {0}",
   "menu.combos.current": "This season",
   "menu.combos.alltime": "All time",
   "menu.combos.previous": "Previous seasons",
-  // {0} is the season's first day, as yyyy-MM-dd in UTC. Used for a season that was not exactly one calendar month.
+  // {0} is the season's first day, as yyyy-MM-dd in UTC. Used for a season that was not
+  // exactly one calendar month.
   "menu.combos.season": "Season from {0}",
   // A season that ran exactly one UTC calendar month. {0} is month.N below, {1} the year.
   "menu.combos.month": "{0} {1}",

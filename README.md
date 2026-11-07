@@ -57,7 +57,7 @@ All of them included in the Ranks plugin. There are also [Modules](#-modules) wh
 
 ## 🧩 Modules
 
-Official modules 
+Official modules. **[Modules Overview](../../wiki/Modules)** explains what a module is, the four kinds, and which can conflict.
 
 | Module | Kind | What it adds |
 |--------|------|--------------|

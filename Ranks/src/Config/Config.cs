@@ -62,7 +62,7 @@ public sealed class DatabaseOptions
     /// resets it.
     /// </para>
     /// </remarks>
-    [Description("0 Days (a new season every VirtualPurgeDays days), 1 Monthly (a new season at 00:00 UTC on the 1st of every month).")]
+    [Description("0 Days (a new season every VirtualPurgeDays days, none while that is 0), 1 Monthly (a new season at 00:00 UTC on the 1st of every month).")]
     public VirtualPurgeMode VirtualPurgeMode { get; set; } = VirtualPurgeMode.Days;
 
     /// <remarks>

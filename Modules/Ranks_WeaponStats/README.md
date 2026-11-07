@@ -194,8 +194,8 @@ connects.
 **Seasons**
 
 This module has no season setting of its own: it follows core's
-`Database.VirtualPurgeMode` and `VirtualPurgeDays`. While seasons are on, every write lands twice, in the
-same transaction — once in the all-time tables, exactly as before, and once in the
+`Database.VirtualPurgeMode` and `VirtualPurgeDays`. While seasons are on, every write lands
+twice, in the same transaction — once in the all-time tables, exactly as before, and once in the
 per-season tables (`ranks_weapon_stats_period`, `ranks_hit_stats_period`,
 `ranks_weapon_hit_stats_period`) under the season it was earned in. When core starts a
 new season, everything not yet written is flushed into the season that just ended.

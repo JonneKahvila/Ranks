@@ -141,7 +141,8 @@
   "menu.top.previous": "Previous seasons",
 
   "menu.period.title": "Previous seasons",
-  // {0} is the season's first day, as yyyy-MM-dd in UTC. Used for a season that was not exactly one calendar month.
+  // {0} is the season's first day, as yyyy-MM-dd in UTC. Used for a season that was not
+  // exactly one calendar month.
   "menu.period.row": "Season from {0}",
   // A season that ran exactly one UTC calendar month. {0} is month.N below, {1} the year.
   "menu.period.month": "{0} {1}",

@@ -172,8 +172,9 @@ Points change → resolve level → displayed = points − threshold → core dr
 **Key Mechanics**
 
 - The level is **derived, never stored** — there is nothing to migrate and nothing to get out of sync.
-- With core's seasons on (`Database.VirtualPurgeMode` or `VirtualPurgeDays`), a new season resets everyone's points, so every
-  prestige restarts with it; past seasons stay in core's leaderboard history.
+- With core's seasons on (`Database.VirtualPurgeMode` or `VirtualPurgeDays`), a new season
+  resets everyone's points, so every prestige restarts with it; past seasons stay in core's
+  leaderboard history.
 - Below the first threshold the overlay is cleared, so an unpromoted player is drawn exactly as core would.
 - Overlays are session-scoped: they vanish on disconnect and on unload.
 - Config reloads re-resolve everyone present immediately.

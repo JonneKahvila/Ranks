@@ -24,53 +24,34 @@ Notable changes to Ranks, newest first.
 
 ## [1.2.0] - 2026-11-07
 
-Worth updating if you run MySQL or MariaDB, or if your players expect the season to
-reset on the 1st of the month. Includes the work versioned 1.1.1, which was never
-released on its own.
+Worth updating if you run MySQL or MariaDB, or want seasons that follow the calendar month.
+Includes the work versioned 1.1.1, which was never released on its own.
 
-- Players whose names contain emoji or special letters (such as 𝓩) were never saved on
-  MySQL/MariaDB: the log showed `skipped <SteamID> in this save pass` on every save, and
-  their progress was lost whenever the server restarted or Ranks reloaded. They are saved
-  from now on, but progress already lost cannot be recovered.
-- The first boot converts the `name` column of `ranks_players` and `ranks_players_history`
-  to `utf8mb4`. On a host that does not allow schema changes, run this by hand (add your
-  table prefix/suffix): `ALTER TABLE ranks_players MODIFY COLUMN name VARCHAR(128) CHARACTER
-  SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '';` and the same for
-  `ranks_players_history`. PostgreSQL and SQLite were not affected.
+- On MySQL/MariaDB, players whose names contain emoji or special letters (such as 𝓩) lost
+  their progress at every restart (`skipped <SteamID> in this save pass` in the log).
+  Progress already lost cannot be recovered.
 - With `Database.TablePrefix` or `TableSuffix` set, the migration ledgers carried it twice,
-  such as `awp_awp_ranks_migrations`. The first boot renames core's and every module's to the
-  right name, `awp_ranks_migrations`, and runs nothing again. On a host that does not allow
-  schema changes, rename them by hand: `ALTER TABLE awp_awp_ranks_migrations RENAME TO
-  awp_ranks_migrations;`.
-- On PostgreSQL, a second Ranks with a different `Database.TablePrefix` or `TableSuffix` in the
-  same database failed to create its tables (`relation "PK_ranks_players" already exists`).
-  Primary keys now carry the prefix and suffix too. Tables that already exist keep theirs.
-- The `Plugin 'Ranks' uses obsolete API: ...ISchedulerService.NextTickAsync` warning no
-  longer appears when Ranks loads. It was a false alarm from SwiftlyS2's own check, not a
-  fault in Ranks.
-- New `Database.VirtualPurgeMode` in `config.jsonc`. Set it to `1` and a new season starts at
-  00:00 UTC on the 1st of every month, so seasons follow the calendar instead of drifting by a
-  few days each month.
-- The default, `0`, keeps seasons working exactly as before, so existing configs need no
-  change. Any other number is reported at boot and treated as `0`.
-- Switching from `0` to `1` does not end the running season early: it lasts until the first 1st
-  on or after its scheduled end, and every season after that starts on the 1st. A season that
-  began on a 1st already counts as a monthly one and ends on the next 1st.
-- Leave `Database.VirtualPurgeDays` at its old value when you switch, because it is how Ranks
-  knows when the running season was due to end. At `0`, that season ends on the first 1st after
-  it began, which may be straight away.
-- Every server sharing one database must use the same value, so switch them together. A server
-  that falls behind now moves to the season another has started, where it used to put that
-  player back into an older season and archive the running one early.
-- Under **Previous seasons**, a season that ran exactly one calendar month is now listed by
-  its month, such as "November 2026". Other seasons still read "Season from 2026-11-07".
-- The Leaderboard's season line no longer gets cut off, and it now sits under the title, where
-  the selection skips it, instead of being a row that did nothing when selected. A monthly
-  season reads "Season: November 2026", and any other shows its last day, such as
-  "Last day: 2026-12-06".
-- If you run your own translation file, add `menu.period.month`, `menu.period.current_month`,
-  `menu.period.last_day` and `month.1` to `month.12`, and remove `menu.period.ends`. A missing
-  key shows in game as raw text.
+  such as `awp_awp_ranks_migrations`. The first boot renames them.
+- The first boot also converts the `name` columns to `utf8mb4`, which can take a while on a
+  large database, so update with a restart rather than a hot reload. Without schema-change
+  rights, apply both changes by hand first: see the
+  [wiki](https://github.com/SwiftlyS2-Plugins/Ranks/wiki/Database#without-schema-change-rights).
+- On PostgreSQL, a second install with its own prefix or suffix in the same database no
+  longer fails with `relation "PK_ranks_players" already exists`.
+- The false `Plugin 'Ranks' uses obsolete API: ...NextTickAsync` warning at load is gone.
+- New `Database.VirtualPurgeMode`: set it to `1` for a new season at 00:00 UTC on the 1st of
+  every month. The default, `0`, leaves seasons off unless `VirtualPurgeDays` is set.
+- Switching to `1` never cuts the running season short. Keep `VirtualPurgeDays` at its old
+  value until that season ends.
+- Every server sharing a database needs the same season settings. One that falls behind now
+  joins the newer season instead of resetting its players into the old one.
+- **Previous seasons** names a season that ran exactly one calendar month by its month, such
+  as "November 2026".
+- The Leaderboard's season line now sits under the title and is no longer cut off.
+- Update Ranks_WeaponStats and Ranks_CustomCombos to 1.1.1 with this release, so their
+  season lists match.
+- If you run your own translation file, add `menu.period.month`,
+  `menu.period.current_month`, `menu.period.last_day` and `month.1` to `month.12`.
 
 ## [1.1.0] - 2026-11-06
 

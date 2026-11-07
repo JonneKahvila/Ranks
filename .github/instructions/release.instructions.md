@@ -73,7 +73,7 @@ otherwise you cannot tell the fix from a warm-cache effect.
 
 ### Release checklist
 
-- [ ] Version bumped in `[PluginMetadata]` **and** `.csproj`
+- [ ] Version bumped in `[PluginMetadata]`, the only place it lives, for core and every module whose shipped files changed
 - [ ] `Ranks.Contract.dll` present in the publish output
 - [ ] No `FluentMigrator*.dll` in any `resources/exports/` of the publish output
 - [ ] `en.jsonc` complete; contributed translations key-complete or omitted
