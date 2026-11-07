@@ -451,17 +451,18 @@ internal sealed class RankMenus
     /// <summary>Names the current season under the title.</summary>
     /// <remarks>
     /// In the header because a header line never takes focus: as a body row the selection landed on
-    /// it first, and pressing select there did nothing, which reads as a broken button.
+    /// it first, and pressing select there did nothing, which reads as a broken button. Left out once
+    /// the season has ended, until the rollover check catches up with it.
     /// </remarks>
     private void AddSeasonLine(IMenuBuilder builder)
     {
-        if (_api.CurrentPeriodEndsAt is { } endsAt)
+        if (_api.CurrentPeriodEndsAt is { } endsAt && endsAt > DateTime.UtcNow)
             builder.AddHeader(new TextComponent(CurrentPeriodLine(_api.CurrentPeriod, endsAt)));
     }
 
     /// <remarks>
-    /// Date only: every boundary falls at 00:00 UTC, and a row wider than the menu is cut off, so
-    /// the time added length without adding information.
+    /// The last full day rather than the boundary: every boundary falls at 00:00 UTC, so the
+    /// boundary's own date reads as one more day of season than there is.
     /// </remarks>
     private string CurrentPeriodLine(long current, DateTime endsAt)
     {
@@ -469,7 +470,7 @@ internal sealed class RankMenus
 
         return PeriodClock.IsCalendarMonth(current, end)
             ? _core.Localizer["menu.period.current_month", MonthLabel(current)]
-            : _core.Localizer["menu.period.ends", endsAt.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)];
+            : _core.Localizer["menu.period.last_day", endsAt.AddDays(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)];
     }
 
     /// <remarks>Month names come from the translation file (<c>month.1</c> … <c>month.12</c>), not the server's culture.</remarks>
