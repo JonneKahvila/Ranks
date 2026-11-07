@@ -92,10 +92,11 @@ public interface IRanksApi
 
     /// <summary>Whether core counts play at all: <c>MinPlayers</c> met, not a warmup <c>WarmupPoints</c> excludes, and no bots-only team while <c>BotsEnabled</c> is off.</summary>
     /// <remarks>
-    /// While false core records no counter and no points (FR-PTS-03). A module keeping its own
-    /// statistics asks per event; core decides once per server tick, so the module gets the answer
-    /// core used for the same event. Ignores <c>UseCoreRankingLogic</c>. A single interaction with
-    /// a bot is still the caller's call, made with <c>BotsEnabled</c>.
+    /// While false core records no points and no counter except playtime, which measures time
+    /// connected rather than play (FR-PTS-03). A module keeping its own statistics asks per event;
+    /// core decides once per server tick, so the module gets the answer core used for the same
+    /// event. Ignores <c>UseCoreRankingLogic</c>. A single interaction with a bot is still the
+    /// caller's call, made with <c>BotsEnabled</c>.
     /// </remarks>
     bool IsPlayCounted { get; }
 

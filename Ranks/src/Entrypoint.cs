@@ -17,7 +17,7 @@ namespace Ranks;
 
 [PluginMetadata(
     Id = "Ranks",
-    Version = "1.2.0",
+    Version = "1.3.0",
     Name = "Ranks",
     Author = "Shmitzas",
     Description = "Extensive ranks and playtime data collection plugin.")]
@@ -29,9 +29,9 @@ public sealed partial class Ranks : BasePlugin
     /// <summary>Tables core reads, with the columns a missed migration would leave out.</summary>
     private static readonly (string Table, string Columns)[] RequiredReads =
     [
-        ("ranks_players", "steam_id, headshots, hits, misses, period"),
+        ("ranks_players", "steam_id, headshots, hits, misses, period, playtime"),
         ("ranks_settings", "steam_id"),
-        ("ranks_players_history", "steam_id, period"),
+        ("ranks_players_history", "steam_id, period, playtime"),
     ];
 
     private ILogger _logger = null!;

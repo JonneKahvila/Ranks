@@ -57,6 +57,20 @@ internal sealed class PlayerRecord
 
     public int BombsDefused { get; set; }
 
+    /// <summary>Seconds connected, banked up to the last <see cref="CreditPlaytime"/>.</summary>
+    /// <remarks>
+    /// Counted as K4-LevelRanks counted it — warmup, spectating and an empty server included — so it
+    /// is the one counter outside <c>AwardPipeline.IsPlayCounted</c>: it measures presence, not play.
+    /// </remarks>
+    public long Playtime { get; set; }
+
+    /// <summary><see cref="Playtime"/> plus the running session's whole seconds not yet banked.</summary>
+    /// <remarks>What readers show, so someone who joined minutes ago does not read 0 until the next save.</remarks>
+    public long LivePlaytime => Playtime + UnbankedSeconds(DateTime.UtcNow.Ticks, Volatile.Read(ref _playtimeSince));
+
+    /// <remarks>UTC ticks where the unbanked stretch began; 0 while nobody is connected on this record.</remarks>
+    private long _playtimeSince;
+
     public DateTime FirstSeen { get; set; }
 
     public DateTime LastSeen { get; set; }
@@ -94,7 +108,8 @@ internal sealed class PlayerRecord
     /// Shared by the reset and the period rollover so the two cannot drift: a separate copy of this
     /// list already shipped without <see cref="Headshots"/>, <see cref="Hits"/> and
     /// <see cref="Misses"/> once. <see cref="Name"/>, <see cref="FirstSeen"/> and preferences are
-    /// identity, not progression, and survive.
+    /// identity, not progression, and survive. A running playtime session restarts here, so time
+    /// from before the clear is never banked after it.
     /// </remarks>
     public void ClearProgress(int points, int rankIndex)
     {
@@ -111,19 +126,57 @@ internal sealed class PlayerRecord
         MatchLosses = 0;
         BombsPlanted = 0;
         BombsDefused = 0;
+        Playtime = 0;
+        RestartRunningPlaytime();
         Killstreak = 0;
         PendingSummaryPoints = 0;
         RankIndex = rankIndex;
         Dirty = true;
     }
 
-    /// <summary>Queues the figures held now as <see cref="Period"/>'s final ones, then moves into <paramref name="period"/>.</summary>
+    /// <summary>Banks the playtime so far, queues the figures held now as <see cref="Period"/>'s final ones, then moves into <paramref name="period"/>.</summary>
     public void StartPeriod(long period, int points, int rankIndex)
     {
+        CreditPlaytime(DateTime.UtcNow);
         Volatile.Write(ref _pendingArchives, [.. PendingArchives ?? [], PlayerHistoryRow.From(this)]);
         Period = period;
         ClearProgress(points, rankIndex);
     }
+
+    /// <summary>Starts counting connected time, unless a session is already running.</summary>
+    /// <remarks>
+    /// A no-op on a running clock because both connect triggers reach the same record, and the second
+    /// would otherwise discard the seconds since the first.
+    /// </remarks>
+    public void StartPlaytime(DateTime utcNow) => Interlocked.CompareExchange(ref _playtimeSince, utcNow.Ticks, 0);
+
+    /// <summary>Banks the whole seconds since the session started or was last banked; the remainder carries over.</summary>
+    /// <remarks>Game thread only, like every other counter write.</remarks>
+    public void CreditPlaytime(DateTime utcNow)
+    {
+        var since = Volatile.Read(ref _playtimeSince);
+        var seconds = UnbankedSeconds(utcNow.Ticks, since);
+        if (seconds <= 0) return;
+
+        Playtime += seconds;
+        Volatile.Write(ref _playtimeSince, since + seconds * TimeSpan.TicksPerSecond);
+        Dirty = true;
+    }
+
+    /// <summary>Banks the session so far and stops the clock until the next <see cref="StartPlaytime"/>.</summary>
+    public void StopPlaytime(DateTime utcNow)
+    {
+        CreditPlaytime(utcNow);
+        Volatile.Write(ref _playtimeSince, 0);
+    }
+
+    private void RestartRunningPlaytime()
+    {
+        if (Volatile.Read(ref _playtimeSince) != 0) Volatile.Write(ref _playtimeSince, DateTime.UtcNow.Ticks);
+    }
+
+    private static long UnbankedSeconds(long nowTicks, long sinceTicks) =>
+        sinceTicks == 0 ? 0 : Math.Max(0, (nowTicks - sinceTicks) / TimeSpan.TicksPerSecond);
 
     /// <summary>Drops the archives a committed write carried, unless a rollover replaced them meanwhile.</summary>
     /// <remarks>

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Ranks.Api;
 using Ranks.Config;
 using Ranks.Contract;
+using Ranks.Database;
 using Ranks.Players;
 using Ranks.Ranking;
 using SwiftlyS2.Shared;
@@ -104,7 +105,22 @@ internal sealed class RankMenus
 
     public void OpenLadder(IPlayer player) => BuildLadder(player).Open(player);
 
-    public void OpenTop(IPlayer player) => BuildTop(player).Open(player);
+    /// <summary>Straight to the XP list when it is the only one to choose, otherwise the Leaderboard screen.</summary>
+    /// <remarks>
+    /// The menu's Leaderboard row always opens the screen, which is where the playtime board lives;
+    /// the command keeps the single step it always had on a server without seasons or module boards.
+    /// </remarks>
+    public void OpenTop(IPlayer player)
+    {
+        var menu = !_api.ArePeriodsEnabled && _entries.For(RanksMenuSections.Leaderboard).Count == 0
+            ? BuildTopList(_api.CurrentPeriod, _core.Localizer["menu.top.title"])
+            : BuildTop(player);
+
+        menu.Open(player);
+    }
+
+    /// <summary>Opens the playtime board, the target of <c>!ttop</c> and of the Leaderboard screen's Playtime row.</summary>
+    public void OpenPlaytimeTop(IPlayer player) => BuildPlaytimeTop().Open(player);
 
     /// <remarks>Chat, not a menu: there is no record to render and the player needs to know why.</remarks>
     private bool Loaded(IPlayer player)
@@ -211,7 +227,7 @@ internal sealed class RankMenus
         var builder = _core.Menu.CreateMenu("ranks.stats.main")
             .WithTitle(_core.Localizer[_api.ArePeriodsEnabled ? "menu.stats.current" : "menu.stats.main_title"])
             .AddHeader(new DividerComponent())
-            .WithItemsPerPage(9);
+            .WithItemsPerPage(10);
 
         foreach (var line in StatLines(snapshot))
             builder.Add(new TextComponent(line));
@@ -220,6 +236,7 @@ internal sealed class RankMenus
     }
 
     /// <summary>The counter lines, shared so a player's own menu and a leaderboard pick agree.</summary>
+    /// <remarks>One page of ten: both menus that list these size their page to fit them, so a new line moves that number too.</remarks>
     private List<string> StatLines(RanksPlayerSnapshot record)
     {
         var kd = record.Deaths == 0 ? record.Kills : Math.Round(record.Kills / (double)record.Deaths, 2);
@@ -241,22 +258,17 @@ internal sealed class RankMenus
             _core.Localizer["menu.stats.rounds", record.RoundWins, record.RoundLosses],
             _core.Localizer["menu.stats.matches", record.MatchWins, record.MatchLosses],
             _core.Localizer["menu.stats.bombs", record.BombsPlanted, record.BombsDefused],
+            _core.Localizer["menu.stats.playtime", PlaytimeFormatter.Format(_core, record.Playtime)],
         ];
     }
 
     // ---- Leaderboard ---------------------------------------------------------
 
-    /// <summary>The Leaderboard row: core's list itself, or a screen of lists once there is more than one.</summary>
-    /// <remarks>
-    /// Opens the list directly while periods are off and no module hangs a board here, so a server
-    /// with neither sees exactly the screen it always did.
-    /// </remarks>
+    /// <summary>The Leaderboard row: core's XP and playtime boards, then every module's.</summary>
     private IMenu BuildTop(IPlayer player)
     {
         var entries = _entries.For(RanksMenuSections.Leaderboard);
         var periods = _api.ArePeriodsEnabled;
-
-        if (!periods && entries.Count == 0) return BuildTopList(_api.CurrentPeriod, _core.Localizer["menu.top.title"]);
 
         var builder = _core.Menu.CreateMenu("ranks.top.sections")
             .WithTitle(_core.Localizer["menu.top.title"]);
@@ -282,24 +294,60 @@ internal sealed class RankMenus
                 BuildTopList(_api.CurrentPeriod, _core.Localizer["menu.top.title"])));
         }
 
+        builder.Add(new SubmenuComponent(_core.Localizer["menu.top.playtime"], _ => BuildPlaytimeTop()));
+
         foreach (var (moduleId, entry) in entries)
             builder.Add(new SubmenuComponent(entry.Label, _ => _entries.Build(moduleId, entry, player)));
 
         return builder.AddFooter(new DividerComponent()).Build();
     }
 
-    /// <summary>One period's leaderboard, or all time. Paging is the component's job, so nothing here hand-rolls it.</summary>
+    /// <summary>The playtime board: the list itself while periods are off, otherwise this season, all time and previous seasons.</summary>
+    private IMenu BuildPlaytimeTop()
+    {
+        var title = _core.Localizer["menu.toptime.title"];
+
+        if (!_api.ArePeriodsEnabled) return BuildPlaytimeList(_api.CurrentPeriod, title);
+
+        var builder = _core.Menu.CreateMenu("ranks.top.playtime.sections").WithTitle(title);
+
+        AddSeasonLine(builder);
+
+        return builder
+            .AddHeader(new DividerComponent())
+            .WithItemsPerPage(8)
+            .Add(new SubmenuComponent(_core.Localizer["menu.top.current"], _ =>
+                BuildPlaytimeList(_api.CurrentPeriod, _core.Localizer["menu.top.current"])))
+            .Add(new SubmenuComponent(_core.Localizer["menu.top.alltime"], _ =>
+                BuildPlaytimeList(RanksPeriods.AllTime, _core.Localizer["menu.top.alltime"])))
+            .Add(new SubmenuComponent(_core.Localizer["menu.top.previous"], _ => BuildPeriodPicker(BuildPlaytimeList)))
+            .AddFooter(new DividerComponent())
+            .Build();
+    }
+
+    /// <summary>One period's XP leaderboard, or all time.</summary>
+    /// <remarks>
+    /// Every variant keeps the <c>ranks.top</c> id: a renderer drawing that page reads the figures
+    /// off the rows, so it is right for any period without knowing which one it shows.
+    /// </remarks>
+    private IMenu BuildTopList(long period, string title) =>
+        BuildBoardList("ranks.top", "points", period, title,
+            e => _core.Localizer["menu.top.row", e.Position, e.Name, e.Value]);
+
+    /// <summary>One period's playtime leaderboard, or all time.</summary>
+    /// <remarks>An id of its own: a renderer that recognises <c>ranks.top</c> reads every row's figure as points, and these are seconds.</remarks>
+    private IMenu BuildPlaytimeList(long period, string title) =>
+        BuildBoardList("ranks.top.playtime", StatColumns.Playtime, period, title,
+            e => _core.Localizer["menu.toptime.row", e.Position, e.Name, PlaytimeFormatter.Format(_core, e.Value)]);
+
+    /// <summary>A leaderboard over one stat key. Paging is the component's job, so nothing here hand-rolls it.</summary>
     /// <remarks>
     /// The item type is the row, never <c>IMenuComponent</c>: the component renders each item
     /// through <c>Formatter</c>, whose default is <c>ToString()</c> — so a component as the item
     /// draws its own type name.
-    /// <para>
-    /// Every variant keeps the <c>ranks.top</c> id: a renderer drawing that page reads the figures
-    /// off the rows, so it is right for any period without knowing which one it shows.
-    /// </para>
     /// </remarks>
-    private IMenu BuildTopList(long period, string title) =>
-        _core.Menu.CreateMenu("ranks.top")
+    private IMenu BuildBoardList(string id, string statKey, long period, string title, Func<RanksLeaderboardEntry, string> row) =>
+        _core.Menu.CreateMenu(id)
             .WithTitle(title)
             .AddHeader(new DividerComponent())
             .WithItemsPerPage(10)
@@ -307,7 +355,7 @@ internal sealed class RankMenus
             {
                 try
                 {
-                    return await _api.GetTopAsync("points", 50, period).ConfigureAwait(false);
+                    return await _api.GetTopAsync(statKey, 50, period).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -317,7 +365,7 @@ internal sealed class RankMenus
                 }
             })
             {
-                Formatter = e => _core.Localizer["menu.top.row", e.Position, e.Name, e.Value],
+                Formatter = row,
                 ItemHint = _ => _core.Localizer["menu.top.hint"],
                 OnItemSelected = ctx =>
                 {
@@ -361,7 +409,7 @@ internal sealed class RankMenus
         _core.Menu.CreateMenu(id)
             .WithTitle(title)
             .AddHeader(new DividerComponent())
-            .WithItemsPerPage(9)
+            .WithItemsPerPage(10)
             .Add(new PagedCollectionComponent<string>(async () =>
             {
                 try
@@ -549,8 +597,10 @@ internal sealed class RankMenus
         // spelled out rather than interpolated so the translation checker can see it is reachable.
         Line(CommandsConfig.Rank, name => _core.Localizer["help.rank", name]);
         Line(CommandsConfig.Stats, name => _core.Localizer["help.stats", name]);
+        Line(CommandsConfig.MyTime, name => _core.Localizer["help.mytime", name]);
         Line(CommandsConfig.Ranks, name => _core.Localizer["help.ranks", name]);
         Line(CommandsConfig.Top, name => _core.Localizer["help.top", name]);
+        Line(CommandsConfig.TopTime, name => _core.Localizer["help.ttop", name]);
         Line(CommandsConfig.ResetMyRank, name => _core.Localizer["help.resetmyrank", name]);
 
         void Line(string configKey, Func<string, string> format)

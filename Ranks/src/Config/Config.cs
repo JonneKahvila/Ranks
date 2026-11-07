@@ -88,7 +88,7 @@ public sealed class RankOptions
     /// </remarks>
     public bool UseCoreRankingLogic { get; set; } = true;
 
-    /// <remarks>Humans connected, spectators included. Below it nothing is recorded, not only points (FR-PTS-03).</remarks>
+    /// <remarks>Humans connected, spectators included. Below it nothing is recorded, not only points — playtime aside (FR-PTS-03).</remarks>
     public int MinPlayers { get; set; } = 4;
 
     /// <remarks>FR-PTS-05's multiplier formula assumes non-negative points, so this cannot go below zero.</remarks>

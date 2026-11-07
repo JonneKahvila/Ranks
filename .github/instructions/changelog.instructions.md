@@ -54,3 +54,15 @@ One-line summary, only when the release has a theme or a reason to hurry.
 
 Read the bullets back as an admin. If one explains why the bug existed at the code
 level, cut it to the symptom and the fix.
+
+Then cut what the hand trims in `d2eb46c` and `1fc1fbe` removed every time
+(`git show d2eb46c 1fc1fbe -- CHANGELOG.md`):
+
+- behaviour that did not change — "still", "as before", "like every other statistic";
+- reasons and mechanisms — "because", "so that", how the fix works;
+- edge cases, second examples, and detail a wiki page already holds — link the page;
+- a lead sentence that repeats a bullet;
+- a consequence the instruction already implies — "until it exists, nothing is recorded".
+
+A bullet is one or two lines, three with a link. For scale, 1.1.0 shipped seasons in six
+bullets.

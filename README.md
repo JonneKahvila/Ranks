@@ -18,7 +18,7 @@
 > - **[K4-LevelRanks-SwiftlyS2](https://github.com/K4ryuu/K4-LevelRanks-SwiftlyS2)** - by [K4ryuu](https://github.com/K4ryuu) — now archived
 > - **[K4-LevelRanks-Upkeep](https://github.com/shmitzas/K4-LevelRanks-Upkeep)** - by [shmitzas](https://github.com/shmitzas) — the maintained fork, with minimal changes to original fork
 > - **[K4-System](https://github.com/karola3vax/K4-System)** - by [karola3vax](https://github.com/karola3vax) — a rewrite of K4ryuu's original
-> - **[K4-Zenith](https://github.com/K4ryuu/K4-Zenith)** - by [K4ryuu](https://github.com/K4ryuu) — its Ranks and Stats modules
+> - **[K4-Zenith](https://github.com/K4ryuu/K4-Zenith)** - by [K4ryuu](https://github.com/K4ryuu) — its Ranks, Stats and TimeStats modules
 
 ---
 
@@ -28,6 +28,7 @@ All of them included in the Ranks plugin. There are also [Modules](#-modules) wh
 
 - 🏆 **Points and ranks** — a configurable ladder, priced per event, with VIP and dynamic multipliers
 - 📊 **Gameplay stats** — kills, deaths, assists, round and match results, bomb plants and defuses
+- ⏱️ **Playtime** — time on the server as K4-LevelRanks counted it, with `!mytime` and a playtime leaderboard, `!ttop`
 - 🗓️ **Seasons** — optional: every calendar month or every N days everyone's rank starts over, while past seasons and all-time standings stay browsable
 - 🎖️ **Native scoreboard ranks** — Premier, Competitive, Wingman, or your own icon set, plus rank clan tags
 - 👀 **Everyone's rank, not just yours** — the reveal CS2 sends once per map, re-sent on round start, on join and on rank change

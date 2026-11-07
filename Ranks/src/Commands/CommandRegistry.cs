@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Ranks.Api;
 using Ranks.Config;
+using Ranks.Database;
 using Ranks.Menus;
 using Ranks.Players;
 using Ranks.Ranking;
@@ -100,12 +101,15 @@ internal sealed class CommandRegistry
 
     private ICommandService.CommandListener? HandlerFor(string key) => key switch
     {
-        // Each player command is a shortcut into one branch of the tree the root menu shows;
-        // preferences and help have no command at all, by design (FR-CMD-02).
+        // Each player command is a shortcut into one branch of the tree the root menu shows, bar
+        // !mytime, which answers in chat as K4-LevelRanks did; preferences and help have no
+        // command at all, by design (FR-CMD-02).
         CommandsConfig.Rank => ctx => ForPlayer(ctx, _menus.OpenRoot),
         CommandsConfig.Ranks => ctx => ForPlayer(ctx, _menus.OpenLadder),
         CommandsConfig.Stats => ctx => ForPlayer(ctx, _menus.OpenStatistics),
         CommandsConfig.Top => ctx => ForPlayer(ctx, _menus.OpenTop),
+        CommandsConfig.MyTime => ctx => ForPlayer(ctx, ShowPlaytime),
+        CommandsConfig.TopTime => ctx => ForPlayer(ctx, ShowPlaytimeTop),
         CommandsConfig.ResetMyRank => ctx => ForPlayer(ctx, ResetSelf),
         CommandsConfig.SetPoints => ctx => AdjustPoints(ctx, AdjustMode.Set),
         CommandsConfig.GivePoints => ctx => AdjustPoints(ctx, AdjustMode.Add),
@@ -127,6 +131,52 @@ internal sealed class CommandRegistry
         }
 
         action(player);
+    }
+
+    /// <summary>The player's playtime in chat, as K4-LevelRanks' <c>!mytime</c> answered.</summary>
+    /// <remarks>The current period's figure, like every default view; all time is under Statistics and on the playtime board.</remarks>
+    private void ShowPlaytime(IPlayer player)
+    {
+        if (_registry.BySlot(player.Slot) is not { } record)
+        {
+            Chat.Send(_core, player, "error.not_loaded");
+            return;
+        }
+
+        var key = _api.ArePeriodsEnabled ? "playtime.mine_season" : "playtime.mine";
+        Chat.Send(_core, player, key, PlaytimeFormatter.Format(_core, record.LivePlaytime));
+    }
+
+    /// <summary>Opens the playtime board and reports the player's place on it in chat, as K4-LevelRanks' <c>!ttop</c> did.</summary>
+    private void ShowPlaytimeTop(IPlayer player)
+    {
+        _menus.OpenPlaytimeTop(player);
+
+        var key = _api.ArePeriodsEnabled ? "playtime.position_season" : "playtime.position";
+        _ = AnnouncePlaytimePositionAsync(player.SteamID, key);
+    }
+
+    /// <remarks>
+    /// Silent while the player holds no stored figures — a record not yet saved has nothing to rank —
+    /// as K4-LevelRanks was. Both counts are the current period's, so they describe one board. The
+    /// API calls catch their own failures and answer 0, so this task never faults.
+    /// </remarks>
+    private async Task AnnouncePlaytimePositionAsync(ulong steamId, string key)
+    {
+        var position = await _api.GetPositionAsync(steamId, StatColumns.Playtime).ConfigureAwait(false);
+        var total = await _api.GetTotalRankedAsync().ConfigureAwait(false);
+
+        if (position <= 0 || total <= 0) return;
+
+        _core.Scheduler.NextTick(() => SendIfConnected(steamId, key, position, total));
+    }
+
+    /// <summary>Chat to a player found again by SteamID, since they may have left while the query ran.</summary>
+    /// <remarks>Game thread only: resolving a player is a native read.</remarks>
+    private void SendIfConnected(ulong steamId, string key, params object[] args)
+    {
+        if (_core.PlayerManager.GetPlayerFromSteamId(steamId, allowUnauthorized: false) is { } player)
+            Chat.Send(_core, player, key, args);
     }
 
 

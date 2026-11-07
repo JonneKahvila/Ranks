@@ -22,6 +22,21 @@ Notable changes to Ranks, newest first.
 
 ---
 
+## [1.3.0] - 2026-11-07
+
+Playtime, counted the way K4-LevelRanks counted it.
+
+- New `!mytime` shows your playtime in chat, and `!ttop` opens a playtime leaderboard.
+- `!stats` and the Leaderboard menu show playtime too.
+- The first boot adds a `playtime` column to the player tables. Without schema-change
+  rights, add it by hand first: see the
+  [wiki](https://github.com/SwiftlyS2-Plugins/Ranks/wiki/Database#without-schema-change-rights).
+- Playtime starts at 0 for everyone. Ranks_Importer 1.1.0 can import it from your old
+  plugin, even onto a server already running Ranks.
+- Plugins can read playtime through `core.playtime` and `RanksPlayerSnapshot.Playtime`.
+- If you run your own translation file, add `playtime.*`, `duration.*`, `menu.toptime.*`,
+  `menu.*.playtime`, and the `help` and `command` keys for `mytime` and `ttop`.
+
 ## [1.2.0] - 2026-11-07
 
 Worth updating if you run MySQL or MariaDB, or want seasons that follow the calendar month.

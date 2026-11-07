@@ -32,6 +32,10 @@ public sealed record RanksPlayerSnapshot(
 
     public long Misses { get; init; }
 
+    /// <summary>Seconds connected to the server — warmup, spectating and an empty server included.</summary>
+    /// <remarks>Includes the running session for a player who is connected now; a stored row lags it until the next save.</remarks>
+    public long Playtime { get; init; }
+
     /// <summary>The period these figures belong to, or <see cref="RanksPeriods.AllTime"/> for a sum over every period.</summary>
     public long Period { get; init; }
 }

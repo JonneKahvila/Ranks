@@ -55,6 +55,8 @@ ships its own numbers rather than injecting them into core's.
 ### 2.1 In scope
 
 - Core point/rank engine and its persistence.
+- Playtime: the seconds each player spends connected, counted as K4-LevelRanks
+  counted them, with `!mytime` and a playtime board (FR-DB-04, FR-CMD-02).
 - Chat and menu surfaces for players and admins.
 - Scoreboard integration (clan tag, score sync, Premier rating / skill-group icon).
 - A public contract assembly (`Ranks.Api.v1`) covering player data, scoring,
@@ -73,10 +75,9 @@ ships its own numbers rather than injecting them into core's.
   schema is a deliberate decision (§5). Migration is handled by a separate
   tool/repo that rewrites a SQL dump offline; `Ranks` ships no importer and
   reads no legacy table.
-- **Playtime as a scored or displayed statistic.** The `Ranks` plugin
-  description's "playtime data collection" refers to data collected *during*
-  play (weapon stats, point history), not to a tracked session-time value.
-  No `playtime` column, no `!mytime` / `!ttop` commands.
+- **Points for playtime.** Playtime is tracked and shown (FR-DB-04) but never
+  priced: K4-LevelRanks' points-per-interval reward stays out, for the reason
+  FR-PTS-06 gives.
 - Web front-ends, Discord integrations, REST APIs.
 
 ---
@@ -204,6 +205,7 @@ keeping it that way is what makes FR-DB-06's single-statement upsert portable.
 | `match_losses` | `INT` | |
 | `bombs_planted` | `INT` | |
 | `bombs_defused` | `INT` | |
+| `playtime` | `BIGINT` | **Seconds connected**, counted as K4-LevelRanks counted them: from the moment the record is tracked until disconnect — warmup, spectating and an empty server included, so it is the one counter outside FR-PTS-03's gate. Time away is never counted, and a period rollover banks the running session into the period it closes. `BIGINT` seconds because LVL Ranks and K4-LevelRanks store it that way, so an import lands unconverted. |
 | `first_seen` | `DATETIME` | |
 | `last_seen` | `DATETIME` | Purge key (FR-DB-08). Indexed. |
 
@@ -381,6 +383,13 @@ connect" into one line at boot.
 | Round end / map end | Save pass. |
 | Player disconnects | Record stays resident until fully saved; a reconnect adopts it. The disconnect handler must not gate on pawn validity. |
 | Plugin unload | Blocking flush with a bounded budget (~8 s). |
+
+**Playtime is banked, not written continuously.** A connected player's running
+session is added to `playtime` on the game thread before every save pass, at
+disconnect and at a period rollover; readers see it live in the meantime. An
+unclean shutdown therefore loses at most one save interval of it, like every
+other counter. A load that lands after its owner has left starts no clock, since
+no disconnect would follow to stop it.
 
 **Fake clients are never tracked and never get a row.** The filter is
 `IPlayer.IsFakeClient`, applied at load, and it is independent of
@@ -659,7 +668,8 @@ A configured value of `0` disables the event, including its chat line, but
 
 **A gate stops points and statistics together, always.** `MinPlayers`,
 `WarmupPoints` and `BotsEnabled` decide whether play counts at all, and when it
-does not, nothing is recorded — no counter and no points, in core or in any
+does not, nothing is recorded — no counter (playtime aside, below) and no points,
+in core or in any
 module. No setting lets one move without the other. `FfaMode` only changes how a
 same-team kill is priced.
 
@@ -680,6 +690,10 @@ not the game the ladder ranks. K4-LevelRanks gates every counter on `MinPlayers`
 and warmup the same way.
 
 A drawn round — a `round_end` naming neither T nor CT — is nobody's win or loss.
+
+**Playtime is the exception, by design.** It measures time connected, not play, so
+no gate stops it: K4-LevelRanks counted warmup, spectating and a near-empty server
+too, and `!mytime` would otherwise disagree with the clock on the wall.
 
 **The gate is decided once per server tick.** Every handler of one event, core's
 and every module's, gets the same answer, so a kill can never record its
@@ -897,7 +911,8 @@ Three deliberate departures from the source config, all bolded above:
 3. **Playtime rewards are absent.** The source config carries
    `PlaytimeMinutes` / `PlaytimePoints`, both `0`. Core awards points for
    actions, not for occupying a slot; a module can award on a timer if an
-   operator wants it.
+   operator wants it. Playtime itself is tracked and shown (FR-DB-04) — only the
+   reward is left out.
 
 > **`points.jsonc` holds point values and nothing else.** The source config mixes
 > two tuning constants into the same block — `LongDistance: 100` is a distance
@@ -1229,16 +1244,24 @@ a command the file leaves out keeps its shipped definition.
 ### FR-CMD-02 — Player commands
 
 Every one is a **shortcut into a branch of the menu tree** (FR-CMD-04), not a
-surface of its own. Preferences and help deliberately have no command: they are
-reachable only from the root menu, so there is one place to look for them.
+surface of its own — bar `!mytime`, which answers in chat as K4-LevelRanks' did,
+because one figure needs no menu. Preferences and help deliberately have no
+command: they are reachable only from the root menu, so there is one place to
+look for them.
 
 | Default | Aliases | Purpose |
 |---|---|---|
 | `!rank` | `!myrank` | The root menu — every category below hangs off it |
 | `!ranks` | `!ranklist` | Straight to the full ladder |
-| `!top` | `!ranktop` | Straight to the leaderboard |
+| `!top` | `!ranktop` | Straight to the XP board (FR-CMD-04) |
+| `!ttop` | `!timetop`, `!toptime` | Straight to the playtime board, with the player's position on it in chat |
+| `!mytime` | `!playtime`, `!servertime` | The player's playtime, in chat |
 | `!stats` | `!mystats` | Straight to Statistics |
 | `!resetmyrank` | — | Self-reset, behind a confirmation step |
+
+`!mytime` and `!ttop` keep K4-LevelRanks' names, aliases and wording, so players
+moving over keep typing what they know. Both report the current period, which is
+everything while periods are off; with them on, the line says *this season*.
 
 `!resetmyrank` keeps its command because it is reachable from the server console,
 where there is no menu. The same reset is also a row under **Settings**, behind a
@@ -1275,8 +1298,8 @@ under it:
 | Category | Contains |
 |---|---|
 | My rank | Rank, points, progress bar, and the full ladder |
-| Statistics | Core's own counters, plus one row per module |
-| Leaderboard | The paged top list. Selecting a row opens that player's core statistics |
+| Statistics | Core's own counters, playtime among them, plus one row per module |
+| Leaderboard | Core's XP and playtime boards, then every module's. Selecting a row opens that player's core statistics |
 | Settings | Preferences, and self-reset behind a confirmation |
 | Help | Lists the server's configured commands in **chat**, one line each, then closes the menu |
 | Admin commands | Same, for the admin commands. Rendered only for a player holding the permission on at least one, and filtered per line |
@@ -1306,18 +1329,22 @@ A module still ships its own command, but as a shortcut to the same menu rather
 than a second surface — `!weaponstats` opens exactly what **Statistics → Weapon
 stats** opens.
 
-**Leaderboard is a section too** (`RanksMenuSections.Leaderboard`). With no entry
-there and periods off, the Leaderboard row still opens core's list directly, so a
-server with neither sees no extra screen. Otherwise it opens a screen of lists:
-core's own — **This season**, **All time** and **Previous seasons** while periods
-are on (FR-DB-10) — followed by every module entry. **Statistics** gains the same
-three views of core's counters while periods are on.
+**Leaderboard is a section too** (`RanksMenuSections.Leaderboard`). The
+Leaderboard row opens a screen of boards: core's XP board — one row while periods
+are off, **This season**, **All time** and **Previous seasons** while they are on
+(FR-DB-10) — then **Playtime**, which opens the same three views on a screen of
+its own (or the list itself while periods are off), then every module entry.
+`!top` skips that screen and opens the XP list directly while periods are off and
+no module adds a board, so the command keeps the single step it always had.
+**Statistics** gains the same three views of core's counters while periods are on.
 
 **Renderers key on menu ids**, so an id keeps one meaning: `ranks.top` is any
-leaderboard list (a renderer reads its figures off the rows), while
+XP leaderboard list (a renderer reads its figures off the rows), while
 `ranks.stats.main` and `ranks.top.player` stay the current period's — a renderer
 fetches those figures itself — and past or all-time variants take ids of their own
-(`ranks.stats.period`, `ranks.top.player.period`).
+(`ranks.stats.period`, `ranks.top.player.period`). The playtime list is
+`ranks.top.playtime` and its period screen `ranks.top.playtime.sections`: its rows
+carry seconds, and a renderer reading them as points would draw nonsense.
 
 ### FR-CMD-05 — Translations
 
@@ -1738,6 +1765,7 @@ sealed record RanksPlayerSnapshot(
     public long Headshots { get; init; }
     public long Hits      { get; init; }
     public long Misses    { get; init; }
+    public long Playtime  { get; init; }   // seconds, including a connected player's running session
 }
 ```
 
@@ -1748,12 +1776,14 @@ different question and needs a query, so `GetPositionAsync` stays separate.
 into it would put 64 queries into a map change. Everything in the record above
 is already resident, making a snapshot allocation-only.
 
-The twelve counters mirror FR-DB-04's columns exactly, so a rating module
+The thirteen counters mirror FR-DB-04's columns exactly, so a rating module
 (FR-MOD-05) can compute from a snapshot without a second `GetStat` call per
-field. `Headshots`, `Hits` and `Misses` are `init` properties rather than
-positional parameters because the positional constructor is part of the frozen
-contract (FR-API-00). There is no shot total: accuracy is
-`Hits / (Hits + Misses)`, for the reason FR-DB-04 gives.
+field. `Headshots`, `Hits`, `Misses` and `Playtime` are `init` properties rather
+than positional parameters because the positional constructor is part of the
+frozen contract (FR-API-00). There is no shot total: accuracy is
+`Hits / (Hits + Misses)`, for the reason FR-DB-04 gives. `Playtime` runs ahead of
+the stored row until the next save, because it includes the unbanked session
+(FR-DB-07).
 
 ### FR-API-03 — Statistics
 
@@ -1761,10 +1791,11 @@ contract (FR-API-00). There is no shot total: accuracy is
 long GetStat(ulong steamId, string statKey);
 ```
 
-**Scoped to core's own fixed columns** (`core.kills`, `core.deaths`, …). Core
-does not know a module's tables exist, so it cannot read, write or sort them —
-that is the deliberate cost of FR-DB-04's all-fixed-columns shape, and of the
-dependency rule in FR-PTS-01.
+**Scoped to core's own fixed columns** (`core.kills`, `core.deaths`, …,
+`core.playtime`). Core does not know a module's tables exist, so it cannot read,
+write or sort them — that is the deliberate cost of FR-DB-04's all-fixed-columns
+shape, and of the dependency rule in FR-PTS-01. `core.playtime` is seconds, read
+live for a connected player like the snapshot (FR-API-02).
 
 > **Stat keys keep the `core.` prefix; point-event keys dropped it.** `core.kills`
 > is the lifetime counter, `kill` is the priced event (FR-PTS-06) — two different
@@ -1774,7 +1805,7 @@ dependency rule in FR-PTS-01.
 Rating modules depend on this read path: an Elo model needs kills, deaths and
 round outcomes to compute anything (FR-MOD-05, contract item 2).
 
-> **Read-only, and there is no `SetStat`.** The nine counters are facts about
+> **Read-only, and there is no `SetStat`.** Core's counters are facts about
 > the game that only core observes, so core is their single writer; correcting
 > one is an admin command, not a module call. The importer case that argued for
 > write access does not need it — a migration tool already holds the connection
@@ -1891,8 +1922,8 @@ tracks live config reloads (NFR-08) rather than pinning values at load.
 `IsPlayCounted` is the server-wide half of FR-PTS-03. It ignores
 `UseCoreRankingLogic`, and a single interaction with a bot is left to the caller
 to judge with `BotsEnabled`, because that is a property of each event. While it is
-`false` core records nothing, so a module counting or rating the same play asks it
-per event. Core decides it once per server tick, so the module gets exactly the
+`false` core records nothing but playtime, so a module counting or rating the same
+play asks it per event. Core decides it once per server tick, so the module gets exactly the
 answer core used for that event, and asking is cheap even from `weapon_fire`. It
 is a later addition, so a module calling it against an older core gets a
 `MissingMethodException` when the call is JIT-compiled — keep the call in a
@@ -2518,7 +2549,7 @@ Neither is a design question; both fail **silently** if wrong.
    including with `UseCoreRankingLogic` set to `false`.
 4. A stub **absolute** module with `UseCoreRankingLogic = false` is the only
    thing writing `points`: core's own handlers award nothing, its multipliers
-   and dynamic scaling are inert, and the nine stat counters keep updating.
+   and dynamic scaling are inert, and the stat counters keep updating.
 5. Unloading either stub leaves the persisted values intact and emits no errors
    from core.
 6. `Ranks` loading on a server where a module's contract assembly is missing

@@ -918,8 +918,9 @@ period; `PlayerStore` owns every period-aware statement. Three rules carry it:
 
 - **The active period moves only on the game thread**, in `RollOverIfDue` (round
   end, save timer, and a loaded record found on a newer period). Each resident
-  record goes through `PlayerRecord.StartPeriod`, which queues its figures as
-  `PendingArchives` and clears progress through the one `ClearProgress`.
+  record goes through `PlayerRecord.StartPeriod`, which banks its running playtime
+  session, queues its figures as `PendingArchives` and clears progress through the
+  one `ClearProgress`.
 - **An archive is written with its record, never on its own.** `Save` writes each
   pending archive into `ranks_players_history` inside the record's savepoint,
   then the fresh row. `Settle` runs off the game thread, so it clears archives
@@ -992,6 +993,29 @@ independent of `Rank.BotsEnabled` (FR-DB-07).
 > **No per-tick subscription** (NFR-11). `OnTick` and `OnWorldUpdate` fire every
 > tick and must be allocation-free; nothing here is tick-driven. The periodic
 > save pass is an `ISchedulerService` timer.
+
+### 5.2 Playtime clock
+
+`PlayerRecord` holds the banked seconds (`Playtime`) and the UTC ticks the
+unbanked stretch began. Nothing ticks: the clock is read and banked at the points
+below, which is what keeps playtime off NFR-11's list.
+
+- **Start** when a record binds to a connected player — `Publish`, or `Track`
+  re-adopting a resident record — and only if that player still holds the slot. A
+  load landing after its owner left starts nothing, since no disconnect would
+  follow to stop it. `StartPlaytime` is a no-op on a running clock, because
+  authorize and put-in-server both reach `Track`.
+- **Bank** with `CreditPlaytime`: whole seconds are added and the start moves
+  forward by exactly that much, so the remainder carries over — K4-LevelRanks'
+  `UpdatePlaytime` rule. Game thread only: in `SaveAllAsync` and `SavePlayerAsync`
+  when called from it, in `StartPeriod` before the archive is cut, and in
+  `StopPlaytime` at disconnect. An off-thread save writes what was banked last.
+- **Read** through `LivePlaytime`, which adds the unbanked seconds without writing
+  — snapshots, `GetStat` and `!mytime` all use it.
+
+Playtime is cleared by `ClearProgress` like every counter, and a running clock
+restarts there so time before a reset is never banked after it. It is the one
+counter `IsPlayCounted` does not gate (FR-PTS-03).
 
 ---
 

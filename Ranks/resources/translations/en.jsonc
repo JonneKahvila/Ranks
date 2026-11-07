@@ -33,6 +33,24 @@
   "reset.confirm": "[red]This wipes your current XP and statistics.[default] Type the command again within [gold]{0}[default] seconds to confirm.",
   "reset.done": "[green]Your rank has been reset.",
 
+  // ---- Playtime -----------------------------------------------------------
+  //
+  // Time connected to the server, counted as K4-LevelRanks counted it: warmup, spectating and an
+  // empty server included. {0} in the first two is a duration built from the duration.* keys.
+
+  "playtime.mine": "You have spent [gold]{0}[default] on this server.",
+  // Replaces playtime.mine while seasons are on, when the figure is this season's.
+  "playtime.mine_season": "You have spent [gold]{0}[default] on this server this season.",
+  // {0} is the player's position, {1} how many players are ranked.
+  "playtime.position": "You are ranked [gold]#{0}[default] out of [gold]{1} players[default] by playtime.",
+  "playtime.position_season": "You are ranked [gold]#{0}[default] out of [gold]{1} players[default] by playtime this season.",
+
+  // A duration, largest unit first; zero leading units are dropped. {0} days, {1} hours,
+  // {2} minutes; then {0} hours, {1} minutes; then {0} minutes.
+  "duration.days": "{0}d {1}h {2}m",
+  "duration.hours": "{0}h {1}m",
+  "duration.minutes": "{0}m",
+
   // ---- Seasons ------------------------------------------------------------
   //
   // Only when seasons are on: Database.VirtualPurgeMode 1 (monthly), or VirtualPurgeDays above
@@ -65,8 +83,10 @@
   "help.header": "[gold]Available commands:",
   "help.rank": "[gold]!{0} [default]- Your detailed stats, settings and ranks info",
   "help.stats": "[gold]!{0} [default]- Your statistics menu",
+  "help.mytime": "[gold]!{0} [default]- How long you have played on this server",
   "help.ranks": "[gold]!{0} [default]- All available ranks",
   "help.top": "[gold]!{0} [default]- Leaderboard of top players. Select a player to view their stats",
+  "help.ttop": "[gold]!{0} [default]- Leaderboard by playtime, with your position in chat",
   "help.resetmyrank": "[gold]!{0} [default]- Wipes your own XP and statistics. Asks to confirm first",
 
   // Shown only to a player who holds the permission on at least one of these, and each line only
@@ -120,6 +140,8 @@
   "menu.stats.rounds": "Rounds: {0} won, {1} lost",
   "menu.stats.matches": "Matches: {0} won, {1} lost",
   "menu.stats.bombs": "Bombs: {0} planted, {1} defused",
+  // {0} is a duration built from the duration.* keys.
+  "menu.stats.playtime": "Playtime: {0}",
   "menu.stats.modules_empty": "No statistics modules are installed.",
 
   "menu.settings.title": "Settings",
@@ -134,11 +156,18 @@
   "menu.top.hint": "Select to view this player's statistics",
   "menu.top.empty": "Nobody is ranked yet.",
   "menu.top.error": "The leaderboard is unavailable right now.",
-  // Rows of the Leaderboard screen, shown when seasons are on or a module adds a board there.
+  // Rows of the Leaderboard screen. Players stands for the XP board while seasons are off; with
+  // them on, the three season rows replace it.
   "menu.top.players": "Players",
   "menu.top.current": "This season",
   "menu.top.alltime": "All time",
   "menu.top.previous": "Previous seasons",
+  "menu.top.playtime": "Playtime",
+
+  // The playtime board, opened from the Playtime row or !ttop. {0} position, {1} name, {2} a
+  // duration built from the duration.* keys.
+  "menu.toptime.title": "Top playtime",
+  "menu.toptime.row": "#{0} {1} - {2}",
 
   "menu.period.title": "Previous seasons",
   // {0} is the season's first day, as yyyy-MM-dd in UTC. Used for a season that was not
@@ -184,6 +213,8 @@
   "command.ranks.help": "Show the full rank ladder.",
   "command.top.help": "Show the XP leaderboard.",
   "command.stats.help": "Show your statistics.",
+  "command.mytime.help": "Show how long you have played on this server.",
+  "command.ttop.help": "Show the playtime leaderboard.",
   "command.resetmyrank.help": "Reset your own XP and statistics. Requires confirmation.",
   "command.setpoints.help": "Set a player's XP to an exact value.",
   "command.givepoints.help": "Add XP to a player.",

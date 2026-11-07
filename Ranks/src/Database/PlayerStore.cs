@@ -12,6 +12,9 @@ namespace Ranks.Database;
 /// </remarks>
 internal static class StatColumns
 {
+    /// <summary>Seconds connected, the key the playtime board and <c>!ttop</c> sort on.</summary>
+    public const string Playtime = "core.playtime";
+
     private static readonly Dictionary<string, string> Map = new(StringComparer.OrdinalIgnoreCase)
     {
         ["points"] = "points",
@@ -28,6 +31,7 @@ internal static class StatColumns
         ["core.match_losses"] = "match_losses",
         ["core.bombs_planted"] = "bombs_planted",
         ["core.bombs_defused"] = "bombs_defused",
+        [Playtime] = "playtime",
     };
 
     public static bool TryResolve(string statKey, out string column) => Map.TryGetValue(statKey, out column!);
@@ -52,6 +56,7 @@ internal static class StatColumns
         "core.match_losses" => record.MatchLosses,
         "core.bombs_planted" => record.BombsPlanted,
         "core.bombs_defused" => record.BombsDefused,
+        Playtime => record.LivePlaytime,
         _ => 0,
     };
 }
@@ -142,7 +147,7 @@ internal sealed class PlayerStore
                 SELECT h.name, h.points, h.kills, h.deaths, h.assists,
                        h.round_wins, h.round_losses, h.match_wins, h.match_losses,
                        h.bombs_planted, h.bombs_defused, h.last_seen,
-                       h.headshots, h.hits, h.misses, p.first_seen
+                       h.headshots, h.hits, h.misses, p.first_seen, h.playtime
                   FROM {HistoryTable} h
                   LEFT JOIN {PlayersTable} p ON p.steam_id = h.steam_id
                  WHERE h.steam_id = @steam_id AND h.period = @period
@@ -176,6 +181,7 @@ internal sealed class PlayerStore
                     Hits = reader.GetInt32(13),
                     Misses = reader.GetInt32(14),
                     FirstSeen = reader.IsDBNull(15) ? lastSeen : reader.GetDateTime(15),
+                    Playtime = Convert.ToInt64(reader.GetValue(16)),
                 };
             }
         }
@@ -199,7 +205,8 @@ internal sealed class PlayerStore
                    COALESCE(SUM(assists), 0), COALESCE(SUM(round_wins), 0), COALESCE(SUM(round_losses), 0),
                    COALESCE(SUM(match_wins), 0), COALESCE(SUM(match_losses), 0),
                    COALESCE(SUM(bombs_planted), 0), COALESCE(SUM(bombs_defused), 0),
-                   COALESCE(SUM(headshots), 0), COALESCE(SUM(hits), 0), COALESCE(SUM(misses), 0)
+                   COALESCE(SUM(headshots), 0), COALESCE(SUM(hits), 0), COALESCE(SUM(misses), 0),
+                   COALESCE(SUM(playtime), 0)
               FROM {HistoryTable}
              WHERE steam_id = @steam_id
             """;
@@ -211,7 +218,7 @@ internal sealed class PlayerStore
         long At(int ordinal) => Convert.ToInt64(reader.GetValue(ordinal));
 
         return new PlayerTotals(
-            At(0), At(1), At(2), At(3), At(4), At(5), At(6), At(7), At(8), At(9), At(10), At(11), At(12), At(13));
+            At(0), At(1), At(2), At(3), At(4), At(5), At(6), At(7), At(8), At(9), At(10), At(11), At(12), At(13), At(14));
     }
 
     /// <summary>The newest period any player row holds, or <c>RanksPeriods.Initial</c> on an empty table.</summary>
@@ -258,7 +265,7 @@ internal sealed class PlayerStore
             SELECT p.steam_id, p.name, p.points, p.kills, p.deaths, p.assists,
                    p.round_wins, p.round_losses, p.match_wins, p.match_losses,
                    p.bombs_planted, p.bombs_defused, p.first_seen, p.last_seen,
-                   s.show_point_messages, p.headshots, p.hits, p.misses, p.period
+                   s.show_point_messages, p.headshots, p.hits, p.misses, p.period, p.playtime
               FROM {PlayersTable} p
               LEFT JOIN {SettingsTable} s ON s.steam_id = p.steam_id
              WHERE p.steam_id = @steam_id
@@ -289,6 +296,7 @@ internal sealed class PlayerStore
             Hits = reader.GetInt32(16),
             Misses = reader.GetInt32(17),
             Period = Convert.ToInt64(reader.GetValue(18)),
+            Playtime = Convert.ToInt64(reader.GetValue(19)),
         };
     }
 
@@ -301,7 +309,8 @@ internal sealed class PlayerStore
     private void CloseStalePeriod(IDbConnection connection, ulong steamId, long stale, long period, int startPoints)
     {
         const string Columns = "steam_id, period, name, points, kills, deaths, assists, round_wins, round_losses, " +
-                               "match_wins, match_losses, bombs_planted, bombs_defused, headshots, hits, misses, last_seen";
+                               "match_wins, match_losses, bombs_planted, bombs_defused, headshots, hits, misses, " +
+                               "playtime, last_seen";
 
         using var transaction = connection.BeginTransaction();
 
@@ -325,7 +334,7 @@ internal sealed class PlayerStore
                 UPDATE {PlayersTable}
                    SET points = @points, kills = 0, deaths = 0, assists = 0, round_wins = 0, round_losses = 0,
                        match_wins = 0, match_losses = 0, bombs_planted = 0, bombs_defused = 0,
-                       headshots = 0, hits = 0, misses = 0, period = @period
+                       headshots = 0, hits = 0, misses = 0, playtime = 0, period = @period
                  WHERE steam_id = @steam_id AND period = @stale
                 """;
             AddParameter(reset, "@points", startPoints);
@@ -578,10 +587,10 @@ internal sealed class PlayerStore
     {
         const string Columns = "steam_id, name, points, kills, deaths, assists, round_wins, round_losses, " +
                                "match_wins, match_losses, bombs_planted, bombs_defused, first_seen, last_seen, " +
-                               "headshots, hits, misses, period";
+                               "headshots, hits, misses, period, playtime";
         const string Values = "@steam_id, @name, @points, @kills, @deaths, @assists, @round_wins, @round_losses, " +
                               "@match_wins, @match_losses, @bombs_planted, @bombs_defused, @first_seen, @last_seen, " +
-                              "@headshots, @hits, @misses, @period";
+                              "@headshots, @hits, @misses, @period, @playtime";
 
         // first_seen is deliberately absent from both update lists: it is set once, and an absolute
         // writer that restated it would move it forward on every save.
@@ -590,7 +599,7 @@ internal sealed class PlayerStore
                                    "match_wins = @match_wins, match_losses = @match_losses, " +
                                    "bombs_planted = @bombs_planted, bombs_defused = @bombs_defused, " +
                                    "headshots = @headshots, hits = @hits, misses = @misses, " +
-                                   "last_seen = @last_seen, period = @period";
+                                   "last_seen = @last_seen, period = @period, playtime = @playtime";
 
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -616,6 +625,7 @@ internal sealed class PlayerStore
         AddParameter(command, "@hits", row.Hits);
         AddParameter(command, "@misses", row.Misses);
         AddParameter(command, "@period", row.Period);
+        AddParameter(command, "@playtime", row.Playtime);
 
         command.ExecuteNonQuery();
     }
@@ -628,14 +638,17 @@ internal sealed class PlayerStore
     private void WriteHistory(IDbConnection connection, IDbTransaction transaction, PlayerHistoryRow row)
     {
         const string Columns = "steam_id, period, name, points, kills, deaths, assists, round_wins, round_losses, " +
-                               "match_wins, match_losses, bombs_planted, bombs_defused, headshots, hits, misses, last_seen";
+                               "match_wins, match_losses, bombs_planted, bombs_defused, headshots, hits, misses, " +
+                               "playtime, last_seen";
         const string Values = "@steam_id, @period, @name, @points, @kills, @deaths, @assists, @round_wins, @round_losses, " +
-                              "@match_wins, @match_losses, @bombs_planted, @bombs_defused, @headshots, @hits, @misses, @last_seen";
+                              "@match_wins, @match_losses, @bombs_planted, @bombs_defused, @headshots, @hits, @misses, " +
+                              "@playtime, @last_seen";
         const string Assignments = "name = @name, points = @points, kills = @kills, deaths = @deaths, " +
                                    "assists = @assists, round_wins = @round_wins, round_losses = @round_losses, " +
                                    "match_wins = @match_wins, match_losses = @match_losses, " +
                                    "bombs_planted = @bombs_planted, bombs_defused = @bombs_defused, " +
-                                   "headshots = @headshots, hits = @hits, misses = @misses, last_seen = @last_seen";
+                                   "headshots = @headshots, hits = @hits, misses = @misses, playtime = @playtime, " +
+                                   "last_seen = @last_seen";
 
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -659,6 +672,7 @@ internal sealed class PlayerStore
         AddParameter(command, "@headshots", row.Headshots);
         AddParameter(command, "@hits", row.Hits);
         AddParameter(command, "@misses", row.Misses);
+        AddParameter(command, "@playtime", row.Playtime);
         AddParameter(command, "@last_seen", row.LastSeen);
 
         command.ExecuteNonQuery();
@@ -735,6 +749,7 @@ internal readonly record struct PlayerSnapshotRow(
     int Headshots,
     int Hits,
     int Misses,
+    long Playtime,
     long Period,
     PlayerHistoryRow[]? Archives)
 {
@@ -743,7 +758,7 @@ internal readonly record struct PlayerSnapshotRow(
         record.RoundWins, record.RoundLosses, record.MatchWins, record.MatchLosses,
         record.BombsPlanted, record.BombsDefused, record.FirstSeen, record.LastSeen,
         record.ShowPointMessages, record.Headshots, record.Hits, record.Misses,
-        record.Period, record.PendingArchives);
+        record.Playtime, record.Period, record.PendingArchives);
 }
 
 /// <summary>One closed period's final figures for one player, as <c>ranks_players_history</c> holds them.</summary>
@@ -764,12 +779,14 @@ internal readonly record struct PlayerHistoryRow(
     int Headshots,
     int Hits,
     int Misses,
+    long Playtime,
     DateTime LastSeen)
 {
     public static PlayerHistoryRow From(PlayerRecord record) => new(
         record.SteamId, record.Period, record.Name, record.Points, record.Kills, record.Deaths, record.Assists,
         record.RoundWins, record.RoundLosses, record.MatchWins, record.MatchLosses,
-        record.BombsPlanted, record.BombsDefused, record.Headshots, record.Hits, record.Misses, record.LastSeen);
+        record.BombsPlanted, record.BombsDefused, record.Headshots, record.Hits, record.Misses,
+        record.Playtime, record.LastSeen);
 }
 
 /// <summary>Sums over a player's closed periods, with how many periods were summed.</summary>
@@ -787,4 +804,5 @@ internal readonly record struct PlayerTotals(
     long BombsDefused,
     long Headshots,
     long Hits,
-    long Misses);
+    long Misses,
+    long Playtime);

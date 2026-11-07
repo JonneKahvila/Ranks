@@ -28,6 +28,8 @@ internal sealed class CommandsConfig
     public const string Ranks = "ranks";
     public const string Top = "top";
     public const string Stats = "stats";
+    public const string MyTime = "mytime";
+    public const string TopTime = "ttop";
     public const string ResetMyRank = "resetmyrank";
     public const string SetPoints = "setpoints";
     public const string GivePoints = "givepoints";
@@ -39,12 +41,15 @@ internal sealed class CommandsConfig
     [Description("Command names, aliases and permissions. Set Command to an empty string to remove a command. Permission empty means everyone.")]
     public Dictionary<string, CommandDefinition> All { get; set; } = Defaults();
 
+    /// <remarks><c>mytime</c> and <c>ttop</c> keep K4-LevelRanks' names and aliases, so players moving over keep typing what they know.</remarks>
     private static Dictionary<string, CommandDefinition> Defaults() => new(StringComparer.OrdinalIgnoreCase)
     {
         [Rank] = new() { Command = "rank", Aliases = ["myrank"] },
         [Ranks] = new() { Command = "ranks", Aliases = ["ranklist"] },
         [Top] = new() { Command = "top", Aliases = ["ranktop"] },
         [Stats] = new() { Command = "stats", Aliases = ["mystats"] },
+        [MyTime] = new() { Command = "mytime", Aliases = ["playtime", "servertime"] },
+        [TopTime] = new() { Command = "ttop", Aliases = ["timetop", "toptime"] },
         [ResetMyRank] = new() { Command = "resetmyrank" },
         [SetPoints] = new() { Command = "setpoints", Permission = AdminPermission },
         [GivePoints] = new() { Command = "givepoints", Permission = AdminPermission },

@@ -427,6 +427,7 @@ internal sealed class RanksApi : IRanksApi
             Headshots = latest.Headshots + history.Headshots,
             Hits = latest.Hits + history.Hits,
             Misses = latest.Misses + history.Misses,
+            Playtime = latest.Playtime + history.Playtime,
             Period = RanksPeriods.AllTime,
         };
     }

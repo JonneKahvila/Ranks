@@ -228,6 +228,7 @@ internal sealed class PlayerSessions
         {
             resident.Name = name;
             _registry.Adopt(slot, resident);
+            resident.StartPlaytime(DateTime.UtcNow);
             _events.RaisePlayerDataLoaded(Snapshot(resident));
             return;
         }
@@ -301,9 +302,21 @@ internal sealed class PlayerSessions
         loaded.Dirty = true;
 
         var record = _registry.Adopt(slot, loaded);
+        StartPlaytimeIfConnected(record, slot);
 
         _detail.Write("Ranks: loaded {SteamId} with {Points} points.", steamId, record.Points);
         _events.RaisePlayerDataLoaded(Snapshot(record));
+    }
+
+    /// <summary>Starts the playtime clock, unless the player left while their record was loading.</summary>
+    /// <remarks>
+    /// A load landing after its owner's disconnect is still adopted, and no disconnect follows to stop
+    /// a clock started for it — left running, every save would bank time for someone who is not there.
+    /// </remarks>
+    private void StartPlaytimeIfConnected(PlayerRecord record, int slot)
+    {
+        if (_core.PlayerManager.GetPlayer(slot) is { IsFakeClient: false } player && player.SteamID == record.SteamId)
+            record.StartPlaytime(DateTime.UtcNow);
     }
 
     /// <summary>Brings a record loaded off-thread into the period the server is in now.</summary>
@@ -357,7 +370,9 @@ internal sealed class PlayerSessions
 
         if (record is null) return;
 
-        record.LastSeen = DateTime.UtcNow;
+        var now = DateTime.UtcNow;
+        record.StopPlaytime(now);
+        record.LastSeen = now;
         record.Dirty = true;
 
         _ = SavePlayerAsync(record.SteamId, evictAfter: true);
@@ -377,6 +392,8 @@ internal sealed class PlayerSessions
 
         var record = _registry.BySteamId(steamId);
         if (record is null) return false;
+
+        if (_core.IsGameThread) record.CreditPlaytime(DateTime.UtcNow);
 
         var row = PlayerSnapshotRow.From(record);
 
@@ -410,6 +427,8 @@ internal sealed class PlayerSessions
     {
         if (!SchemaUsable) return Task.FromResult(0);
 
+        BankPlaytime();
+
         lock (_saveGate)
         {
             if (_inFlightSave is { IsCompleted: false } running) return running;
@@ -418,6 +437,21 @@ internal sealed class PlayerSessions
 
             return _inFlightSave;
         }
+    }
+
+    /// <summary>Banks every connected player's playtime so far, so the pass about to snapshot carries it.</summary>
+    /// <remarks>
+    /// Game thread only, where connect and disconnect move the same clocks. A module may call
+    /// <see cref="SaveAllAsync"/> from anywhere; such a pass writes what was banked last.
+    /// </remarks>
+    private void BankPlaytime()
+    {
+        if (!_core.IsGameThread) return;
+
+        var now = DateTime.UtcNow;
+
+        foreach (var record in _registry.All)
+            record.CreditPlaytime(now);
     }
 
     private async Task<int> RunSaveAllAsync()
@@ -567,6 +601,7 @@ internal sealed class PlayerSessions
             Headshots = record.Headshots,
             Hits = record.Hits,
             Misses = record.Misses,
+            Playtime = record.LivePlaytime,
             Period = record.Period,
         };
     }
