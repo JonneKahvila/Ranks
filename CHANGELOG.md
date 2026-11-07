@@ -22,6 +22,19 @@ Notable changes to Ranks, newest first.
 
 ---
 
+## [1.1.1] - 2026-11-07
+
+Worth updating if you run MySQL or MariaDB.
+
+- Players whose names contain emoji or special letters (such as 𝓩) were never saved on
+  MySQL/MariaDB: their points and statistics were lost at every map change and disconnect.
+  They are saved from now on, but progress already lost cannot be recovered.
+- The first boot converts the `name` column of `ranks_players` and `ranks_players_history`
+  to `utf8mb4`. On a host that does not allow schema changes, run this by hand (add your
+  table prefix/suffix): `ALTER TABLE ranks_players MODIFY COLUMN name VARCHAR(128) CHARACTER
+  SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '';` and the same for
+  `ranks_players_history`. PostgreSQL and SQLite were not affected.
+
 ## [1.1.0] - 2026-11-06
 
 Seasons: optional automatic resets that keep every past season and an all-time board
