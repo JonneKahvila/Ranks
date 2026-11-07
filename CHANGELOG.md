@@ -20,6 +20,18 @@ Notable changes to Ranks, newest first.
 
      See .github/instructions/changelog.instructions.md for the full style. -->
 
+## [1.2.0] - 2026-11-07
+
+Worth updating if your players expect the season to reset on the 1st of the month.
+
+- New `Database.VirtualPurgeMode` in `config.jsonc`. Set it to `"Monthly"` and a new season
+  starts at 00:00 UTC on the 1st of every month, so seasons follow the calendar instead of
+  drifting by a few days each month. `Database.VirtualPurgeDays` is ignored in that mode.
+- The default, `"Days"`, keeps seasons working exactly as before, so existing configs need no
+  change. An unknown value is reported at boot and treated as `"Days"`.
+- Switching mode takes effect at the next boundary of the new schedule, never mid-season.
+  Every server sharing one database must use the same mode.
+
 ---
 
 ## [1.1.0] - 2026-11-06

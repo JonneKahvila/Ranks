@@ -51,6 +51,21 @@ internal static partial class ConfigValidator
         scoreboard.RankMode = RankDisplayMode.Premier;
     }
 
+    /// <remarks>
+    /// Any number binds to an enum, and an unknown mode must not guess a calendar: falling back to
+    /// <c>Days</c> leaves <c>VirtualPurgeDays</c> in charge, which is what the operator last set.
+    /// </remarks>
+    private static void ClampVirtualPurgeMode(DatabaseOptions database, ILogger logger)
+    {
+        if (Enum.IsDefined(database.VirtualPurgeMode)) return;
+
+        logger.LogWarning(
+            "Ranks: Database.VirtualPurgeMode '{Value}' is not a known mode; using {Fallback}. Valid values: {Valid}.",
+            (int)database.VirtualPurgeMode, VirtualPurgeMode.Days, string.Join(", ", Enum.GetNames<VirtualPurgeMode>()));
+
+        database.VirtualPurgeMode = VirtualPurgeMode.Days;
+    }
+
     private static void RequireSafeAffix(string value, string key)
     {
         if (SqlIdentifier.IsMatch(value)) return;
@@ -65,6 +80,7 @@ internal static partial class ConfigValidator
         database.SaveIntervalSeconds = AtLeast(database.SaveIntervalSeconds, 1, "Database.SaveIntervalSeconds", logger);
         database.PurgeDays = AtLeast(database.PurgeDays, 0, "Database.PurgeDays", logger);
         database.VirtualPurgeDays = AtLeast(database.VirtualPurgeDays, 0, "Database.VirtualPurgeDays", logger);
+        ClampVirtualPurgeMode(database, logger);
         database.MaintenanceIntervalHours =
             AtLeast(database.MaintenanceIntervalHours, 0, "Database.MaintenanceIntervalHours", logger);
     }

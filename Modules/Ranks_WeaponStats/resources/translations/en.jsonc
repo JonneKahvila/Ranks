@@ -29,7 +29,7 @@
 
   // ---- Seasons ------------------------------------------------------------
   //
-  // Only while core's Database.VirtualPurgeDays is above zero. Both rows under Statistics then
+  // Only while core runs seasons (VirtualPurgeMode "Monthly", or VirtualPurgeDays above zero). Both rows under Statistics then
   // open on these three choices; with it at 0 they open their lists exactly as before. The wording
   // matches core's own season screens.
 

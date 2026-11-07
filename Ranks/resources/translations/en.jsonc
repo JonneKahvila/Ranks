@@ -35,8 +35,9 @@
 
   // ---- Seasons ------------------------------------------------------------
   //
-  // Only when Database.VirtualPurgeDays is above zero. A season is one period: everyone's rank
-  // starts over when it ends, and the season that closed stays browsable under Leaderboard.
+  // Only when seasons are on: Database.VirtualPurgeMode "Monthly", or VirtualPurgeDays above
+  // zero. A season is one period: everyone's rank starts over when it ends, and the season that
+  // closed stays browsable under Leaderboard.
 
   "period.started": "[gold]A new season has started![default] Everyone's rank starts over. Last season's standings are kept under [gold]Leaderboard[default].",
 

@@ -55,9 +55,17 @@ public sealed class DatabaseOptions
     public int PurgeDays { get; set; } = 0;
 
     /// <remarks>
-    /// <c>0</c> never starts a new period. Above zero, standings restart at <c>Rank.StartPoints</c>
-    /// every N days on a fixed UTC grid and the closed period is kept as history, not deleted
-    /// (FR-DB-10). Every server sharing a database must use the same value.
+    /// <c>Days</c> follows <c>VirtualPurgeDays</c>; <c>Monthly</c> starts a period on the 1st of
+    /// every UTC calendar month and ignores it (FR-DB-10). Every server sharing a database must
+    /// use the same value.
+    /// </remarks>
+    public VirtualPurgeMode VirtualPurgeMode { get; set; } = VirtualPurgeMode.Days;
+
+    /// <remarks>
+    /// Read only under <c>VirtualPurgeMode</c> <c>Days</c>. <c>0</c> never starts a new period.
+    /// Above zero, standings restart at <c>Rank.StartPoints</c> every N days on a fixed UTC grid
+    /// and the closed period is kept as history, not deleted (FR-DB-10). Every server sharing a
+    /// database must use the same value.
     /// </remarks>
     public int VirtualPurgeDays { get; set; } = 0;
 
@@ -100,6 +108,16 @@ public sealed class RankOptions
     public bool BotsEnabled { get; set; } = false;
 
     public bool FfaMode { get; set; } = false;
+}
+
+/// <summary>How the length of a virtual purge period is decided (FR-DB-10).</summary>
+public enum VirtualPurgeMode
+{
+    /// <summary>Every <c>Database.VirtualPurgeDays</c> days; <c>0</c> turns periods off.</summary>
+    Days = 0,
+
+    /// <summary>Every UTC calendar month, from 00:00 on the 1st.</summary>
+    Monthly = 1,
 }
 
 /// <summary>How the scoreboard renders a player's rank.</summary>
