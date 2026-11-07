@@ -259,15 +259,16 @@ internal sealed class RankMenus
         if (!periods && entries.Count == 0) return BuildTopList(_api.CurrentPeriod, _core.Localizer["menu.top.title"]);
 
         var builder = _core.Menu.CreateMenu("ranks.top.sections")
-            .WithTitle(_core.Localizer["menu.top.title"])
+            .WithTitle(_core.Localizer["menu.top.title"]);
+
+        if (periods) AddSeasonLine(builder);
+
+        builder
             .AddHeader(new DividerComponent())
             .WithItemsPerPage(8);
 
         if (periods)
         {
-            if (_api.CurrentPeriodEndsAt is { } endsAt)
-                builder.Add(new TextComponent(CurrentPeriodLine(_api.CurrentPeriod, endsAt)));
-
             builder
                 .Add(new SubmenuComponent(_core.Localizer["menu.top.current"], _ =>
                     BuildTopList(_api.CurrentPeriod, _core.Localizer["menu.top.current"])))
@@ -446,6 +447,17 @@ internal sealed class RankMenus
             : nextStart is { } end && PeriodClock.IsCalendarMonth(period, end)
                 ? MonthLabel(period)
                 : _core.Localizer["menu.period.row", RanksPeriods.StartOf(period).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)];
+
+    /// <summary>Names the current season under the title.</summary>
+    /// <remarks>
+    /// In the header because a header line never takes focus: as a body row the selection landed on
+    /// it first, and pressing select there did nothing, which reads as a broken button.
+    /// </remarks>
+    private void AddSeasonLine(IMenuBuilder builder)
+    {
+        if (_api.CurrentPeriodEndsAt is { } endsAt)
+            builder.AddHeader(new TextComponent(CurrentPeriodLine(_api.CurrentPeriod, endsAt)));
+    }
 
     /// <remarks>
     /// Date only: every boundary falls at 00:00 UTC, and a row wider than the menu is cut off, so
