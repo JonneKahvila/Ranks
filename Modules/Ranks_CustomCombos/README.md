@@ -253,7 +253,7 @@ A kill matching no combo is unaffected, or an ordinary kill would pay nothing.
 
 ### Seasons
 
-With Ranks' `Database.VirtualPurgeDays` set, every count is stored twice: added to its
+With Ranks' seasons on (`Database.VirtualPurgeMode` or `VirtualPurgeDays`), every count is stored twice: added to its
 lifetime total in `ranks_combos`, as always, and to its season's total in
 `ranks_combos_period`. The module has no season setting of its own — it follows Ranks'
 calendar, and counts still waiting to be written when a season ends are filed under the

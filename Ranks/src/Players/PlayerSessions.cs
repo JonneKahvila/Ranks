@@ -70,27 +70,29 @@ internal sealed class PlayerSessions
     /// <summary>The period every resident record is in, and every new record starts in (FR-DB-10).</summary>
     public long ActivePeriod => Volatile.Read(ref _activePeriod);
 
-    public bool PeriodsEnabled => _config.Current.Database.VirtualPurgeDays > 0;
+    public bool PeriodsEnabled => CurrentGrid.IsEnabled;
 
     public DateTime? ActivePeriodEndsAt =>
-        _config.Current.Database.VirtualPurgeDays is > 0 and var days ? PeriodClock.EndOf(ActivePeriod, days) : null;
+        CurrentGrid is { IsEnabled: true } grid ? PeriodClock.EndOf(ActivePeriod, grid) : null;
+
+    private PeriodGrid CurrentGrid => PeriodGrid.Of(_config.Current.Database);
 
     /// <summary>Settles the period before anyone is tracked. False when it cannot be known.</summary>
     /// <remarks>
     /// Resumes the newest period the data holds whenever the grid would answer an earlier one —
     /// with periods off, so switching them off never starts a period, and after
-    /// <c>VirtualPurgeDays</c> changed, so a period id never goes backwards. A failure must not
+    /// <c>VirtualPurgeMode</c> or <c>VirtualPurgeDays</c> changed, so a period id never goes backwards. A failure must not
     /// guess: every row on a later period than the guess would be closed and reset on its owner's
     /// next load, which is a virtual purge nobody asked for.
     /// </remarks>
     public bool TryInitializePeriod()
     {
-        var days = _config.Current.Database.VirtualPurgeDays;
+        var grid = CurrentGrid;
 
         try
         {
             var latest = _store.LatestPeriod();
-            var period = days > 0 ? Math.Max(PeriodClock.PeriodFor(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), days), latest) : latest;
+            var period = grid.IsEnabled ? Math.Max(PeriodClock.PeriodFor(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), grid), latest) : latest;
 
             Volatile.Write(ref _activePeriod, period);
             return true;
@@ -108,7 +110,7 @@ internal sealed class PlayerSessions
     /// timer, so a server whose rounds never end still turns over within one save interval. With
     /// periods off nothing is ever due, which freezes the period rather than starting a new one.
     /// <para>
-    /// Only a <em>later</em> grid period is due. After <c>VirtualPurgeDays</c> changes, the new
+    /// Only a <em>later</em> grid period is due. After the schedule changes, the new
     /// grid's current block can start before the active period did; waiting for its next boundary
     /// keeps period ids rising, which every older-or-newer comparison here and in modules relies on.
     /// </para>
@@ -117,11 +119,11 @@ internal sealed class PlayerSessions
     {
         if (!SchemaUsable) return;
 
-        var days = _config.Current.Database.VirtualPurgeDays;
-        if (days <= 0) return;
+        var grid = CurrentGrid;
+        if (!grid.IsEnabled) return;
 
         var closed = ActivePeriod;
-        var due = PeriodClock.PeriodFor(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), days);
+        var due = PeriodClock.PeriodFor(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), grid);
         if (due <= closed) return;
 
         Volatile.Write(ref _activePeriod, due);

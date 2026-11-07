@@ -237,7 +237,7 @@ Neither produces a false positive.
 ### 2.4 Seasons
 
 Seasons are core's virtual purge (FR-DB-10): with `Database.VirtualPurgeDays`
-set, core closes the current **period** every N days, puts every player back on
+set (or `VirtualPurgeMode` `Monthly`), core closes the current **period** every N days (or month), puts every player back on
 `Rank.StartPoints` and keeps the closed period. This module carries no setting of
 its own — core is the only clock, and the module follows it.
 

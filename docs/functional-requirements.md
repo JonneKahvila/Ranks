@@ -435,7 +435,9 @@ hours.
 ### FR-DB-10 — Virtual purge (seasons)
 
 `Database.VirtualPurgeDays` (default `0` = never) closes the current **period**
-every N days and opens the next: every player's points restart at
+every N days and opens the next — or, with `Database.VirtualPurgeMode` set to
+`Monthly` (default `Days`), on the 1st of every UTC calendar month, ignoring
+`VirtualPurgeDays`: every player's points restart at
 `Rank.StartPoints` and every counter at zero, while the closed period is **kept**,
 not deleted. It answers the monthly-reset request
 ([#2](https://github.com/SwiftlyS2-Plugins/Ranks/issues/2)) without a real wipe's
@@ -446,10 +448,13 @@ term *season*; the code says *period*.
   the one timestamp shape every supported engine compares and keys on alike. `0`
   (`RanksPeriods.Initial`) is everything recorded before periods were enabled.
 - **Boundaries sit on a fixed grid**: N-day blocks counted from Monday 5 January
-  1970 UTC, so a 7-day period starts every Monday. Stateless by design — every
+  1970 UTC, so a 7-day period starts every Monday; under `Monthly`, 00:00 UTC on
+  the 1st of each month, so periods run 28–31 days. `Monthly` exists because
+  communities moving from monthly-reset plugins expect the season to turn with the
+  calendar, which no N-day grid can do. Stateless by design — every
   server sharing a database derives the same boundaries from the same setting,
   with nothing stored or coordinated. Servers sharing a database must therefore
-  use the same value.
+  use the same mode and value.
 - **Core is the only clock.** No module carries a purge or period setting; each
   follows `CurrentPeriod` and `PeriodChanged` (FR-API-13), so an operator sets this
   once.
@@ -482,6 +487,7 @@ term *season*; the code says *period*.
   effect at the new grid's next boundary; without that, a new grid whose block
   started before the active period would hand out a smaller id, and every
   older-or-newer comparison in core and in modules would read it backwards.
+  Switching between `Days` and `Monthly` follows the same rule.
 - **A reset (`!resetrank`, `!resetmyrank`) clears the current period only.** Past
   periods are history; a past leaderboard does not change because someone reset
   today. Modules are told through `PlayerReset` (FR-API-13).
@@ -1060,7 +1066,7 @@ Saturation (see the warning above) arrives in about a season at this rate: every
 regular reaches Gold and the band stops distinguishing anyone. CS2 has the same
 property and answers it two ways — the rating number keeps rising after the top
 band, and Premier resets every season. **Core has the first always and the second
-on request**: `Database.VirtualPurgeDays` (FR-DB-10) restarts everyone each
+on request**: `Database.VirtualPurgeDays` or `VirtualPurgeMode` (FR-DB-10) restarts everyone each
 period while keeping the closed one, so the colour distinguishes players again
 without losing the long-run total.
 
@@ -2247,7 +2253,7 @@ renderer-specific node in the menu.
 
 ```csharp
 long CurrentPeriod { get; }                 // Unix seconds of the period's UTC start (FR-DB-10)
-bool ArePeriodsEnabled { get; }             // Database.VirtualPurgeDays > 0
+bool ArePeriodsEnabled { get; }             // VirtualPurgeMode Monthly, or VirtualPurgeDays > 0
 DateTime? CurrentPeriodEndsAt { get; }      // null while periods are off
 
 event Action<RanksPeriodChangedArgs> PeriodChanged;   // (OldPeriod, NewPeriod)

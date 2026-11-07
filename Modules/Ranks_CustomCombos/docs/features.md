@@ -325,7 +325,7 @@ core's. Lists the caller's combos and counts, ordered by count.
 
 ### 7.1 Seasons
 
-Core owns the calendar (FR-DB-10): with `Database.VirtualPurgeDays` above zero it closes one
+Core owns the calendar (FR-DB-10): with seasons on (`Database.VirtualPurgeMode` `Monthly`, or `VirtualPurgeDays` above zero) it closes one
 period and opens the next, and a module follows its events rather than keeping a clock or a
 setting of its own. Every write then lands twice, in one transaction — added to the lifetime
 row exactly as before, and to the row of the period the count was earned in. Both writes are
@@ -345,8 +345,9 @@ A write that fails and is retried keeps its stamp.
 
 Every list keeps the `customcombos.list` id, because a renderer draws it from its
 `ComboStatRow` items whatever period they belong to; the period picker is
-`customcombos.periods`. Labels and dates match core's own: `Season from yyyy-MM-dd` in UTC, and
-`Before seasons` for period 0.
+`customcombos.periods`. Labels and dates match core's own: the month (`November 2026`) for a
+period that ran exactly one UTC calendar month, `Season from yyyy-MM-dd` in UTC for any other,
+and `Before seasons` for period 0.
 
 **Before seasons stays empty here.** Core's period 0 holds everything it recorded before periods
 were switched on, but this module keeps counts per period only from that moment on — earlier
