@@ -21,6 +21,9 @@ Notable changes to Ranks, newest first.
      See .github/instructions/changelog.instructions.md for the full style. -->
 
 ---
+## [1.3.0 #2] - 2026-11-08
+
+- Added Finnish translations to core and all modules
 
 ## [1.3.0] - 2026-11-07
 
