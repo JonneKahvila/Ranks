@@ -1,0 +1,225 @@
+{
+  // Ranks - Finnish (suomi).
+  //
+  // Must stay KEY-COMPLETE with en.jsonc: a missing key renders the literal marker {lang}.{key}
+  // to the player rather than falling back to English. See en.jsonc for what each key is and
+  // what its {0}, {1}, ... arguments hold.
+
+  "prefix": "[ [darkred]Ranks [default]] ",
+
+  // ---- Errors -------------------------------------------------------------
+
+  "error.players_only": "[red]Vain pelaajat voivat käyttää tätä komentoa.",
+  "error.not_loaded": "[red]Rankkitietojasi ei ole vielä ladattu. Yritä hetken päästä uudelleen.",
+
+  // ---- XP feedback -----------------------------------------------------
+
+  "XP.gained": "[lime]+{0}[default] XP [grey]({1})",
+  "XP.lost": "[red]-{0}[default] XP [grey]({1})",
+
+  "XP.summary": "[default]Erän yhteenveto: [gold]{0}{1}[default] XP",
+
+  // ---- Rank changes -------------------------------------------------------
+
+  "rank.promoted": "[green]Rankki nousi![default] Rankkisi on nyt [gold]{0}[default], XP: [lime]{1}[default].",
+  "rank.demoted": "[red]Rankki laski.[default] Rankkisi on nyt [gold]{0}[default], XP: [lime]{1}[default].",
+
+  // ---- Self reset ---------------------------------------------------------
+
+  "reset.confirm": "[red]Tämä nollaa nykyiset XP:si ja tilastosi.[default] Vahvista kirjoittamalla komento uudelleen [gold]{0}[default] sekunnin kuluessa.",
+  "reset.done": "[green]Rankkisi on nollattu.",
+
+  // ---- Playtime -----------------------------------------------------------
+
+  "playtime.mine": "Olet pelannut tällä palvelimella [gold]{0}[default].",
+  "playtime.mine_season": "Olet pelannut tällä palvelimella tällä kaudella [gold]{0}[default].",
+  "playtime.position": "Olet peliajassa sijalla [gold]#{0}[default] / [gold]{1} pelaajaa[default].",
+  "playtime.position_season": "Olet tämän kauden peliajassa sijalla [gold]#{0}[default] / [gold]{1} pelaajaa[default].",
+
+  "duration.days": "{0} pv {1} t {2} min",
+  "duration.hours": "{0} t {1} min",
+  "duration.minutes": "{0} min",
+
+  // ---- Seasons ------------------------------------------------------------
+
+  "period.started": "[gold]Uusi kausi on alkanut![default] Kaikkien rankit alkavat alusta. Edellisen kauden sijoitukset löytyvät kohdasta [gold]Toplista[default].",
+
+  // ---- Admin --------------------------------------------------------------
+
+  "admin.usage": "[red]Käyttö:[default] {0} <kohde> <määrä>",
+  "admin.usage_target": "[red]Käyttö:[default] {0} <kohde>",
+  "admin.bad_amount": "[red]'{0}' ei ole numero.",
+  "admin.no_target": "[red]Yksikään pelaaja ei vastannut hakua '{0}'.",
+  "admin.ambiguous_target": "[red]Useampi pelaaja vastasi hakua '{0}'. Kirjoita nimestä enemmän tai käytä SteamID:tä tai status-ID:tä.",
+  "admin.not_loaded": "[red]Pelaajan {0} rankkitietoja ei ole vielä ladattu. Yritä hetken päästä uudelleen.",
+  "admin.adjusted": "Pelaajalla [lime]{0}[default] on nyt [gold]{1}[default] XP.",
+  "admin.reset": "Pelaaja [lime]{0}[default] on nollattu.",
+
+  // ---- Help ---------------------------------------------------------------
+
+  "help.header": "[gold]Käytettävissä olevat komennot:",
+  "help.rank": "[gold]!{0} [default]- Tarkat tilastosi, asetukset ja rankkitiedot",
+  "help.stats": "[gold]!{0} [default]- Tilastovalikkosi",
+  "help.mytime": "[gold]!{0} [default]- Kuinka kauan olet pelannut tällä palvelimella",
+  "help.ranks": "[gold]!{0} [default]- Kaikki saatavilla olevat rankit",
+  "help.top": "[gold]!{0} [default]- Parhaiden pelaajien toplista. Valitse pelaaja nähdäksesi tämän tilastot",
+  "help.ttop": "[gold]!{0} [default]- Peliajan toplista ja oma sijoituksesi chatissa",
+  "help.resetmyrank": "[gold]!{0} [default]- Nollaa omat XP:si ja tilastosi. Pyytää ensin vahvistuksen",
+
+  "help.admin_header": "[gold]Ylläpitokomennot:",
+  "help.setpoints": "[gold]!{0} [grey]<kohde Nimi/SteamID/StatusID> <määrä> [default]- Asettaa kohteen XP:n tarkalleen annettuun määrään",
+  "help.givepoints": "[gold]!{0} [grey]<kohde Nimi/SteamID/StatusID> <määrä> [default]- Lisää kohteelle XP:tä",
+  "help.removepoints": "[gold]!{0} [grey]<kohde Nimi/SteamID/StatusID> <määrä> [default]- Vähentää kohteelta XP:tä",
+  "help.resetrank": "[gold]!{0} [grey]<kohde Nimi/SteamID/StatusID> [default]- Nollaa kohteen XP:n ja tilastot",
+
+  // ---- Menus --------------------------------------------------------------
+  //
+  // Menu rows are one centred line that clips at roughly 42 characters: keep them short.
+
+  "menu.root.title": "Ranks",
+  "menu.root.rank": "Oma rankki",
+  "menu.root.stats": "Tilastot",
+  "menu.root.top": "Toplista",
+  "menu.root.settings": "Asetukset",
+  "menu.root.help": "Ohje (näytetään chatissa)",
+  "menu.root.admin": "Ylläpitokomennot (näytetään chatissa)",
+
+  "menu.rank.title": "Rankkisi",
+  "menu.rank.current": "Rankki: {0}",
+  "menu.rank.XP": "XP: {0}",
+  "menu.rank.next": "{0}: {1} XP jäljellä",
+  "menu.rank.top_band": "Korkein rankki saavutettu",
+  "menu.rank.ladder": "Näytä kaikki rankit",
+
+  "menu.ladder.title": "Rankkitaulukko",
+  "menu.ladder.row": "{0} - {1} XP",
+  "menu.ladder.row_current": "> {0} - {1} XP",
+
+  "menu.stats.title": "Tilastot",
+  "menu.stats.main": "Päätilastot",
+  "menu.stats.main_title": "Päätilastot",
+  "menu.stats.current": "Tämä kausi",
+  "menu.stats.alltime": "Kaikkien aikojen tilastot",
+  "menu.stats.previous": "Aiemmat kaudet",
+  "menu.stats.kills": "Tapot: {0}",
+  "menu.stats.deaths": "Kuolemat: {0}",
+  "menu.stats.kd": "K/D: {0}",
+  "menu.stats.assists": "Assistit: {0}",
+  "menu.stats.headshots": "Headshotit: {0} ({1}% tapoista)",
+  "menu.stats.accuracy": "Tarkkuus: {0}% ({1} osumaa, {2} ohi)",
+  "menu.stats.rounds": "Erät: {0} voitettu, {1} hävitty",
+  "menu.stats.matches": "Matsit: {0} voitettu, {1} hävitty",
+  "menu.stats.bombs": "Pommit: {0} plänttätty, {1} defusattu",
+  "menu.stats.playtime": "Peliaika: {0}",
+  "menu.stats.modules_empty": "Tilastomoduuleja ei ole asennettu.",
+
+  "menu.settings.title": "Asetukset",
+  "menu.settings.XP_messages": "XP-viestit",
+  "menu.settings.reset": "Nollaa rankkini",
+  "menu.settings.reset_title": "Nollaa rankkini",
+  "menu.settings.reset_warning": "Tämä nollaa nykyiset XP:si ja tilastosi. Toimintoa ei voi perua.",
+  "menu.settings.reset_confirm": "Kyllä, nollaa kaikki",
+
+  "menu.top.title": "Toplista",
+  "menu.top.row": "#{0} {1} - {2}",
+  "menu.top.hint": "Valitse nähdäksesi pelaajan tilastot",
+  "menu.top.empty": "Ketään ei ole vielä rankattu.",
+  "menu.top.error": "Toplista ei ole juuri nyt saatavilla.",
+  "menu.top.players": "Pelaajat",
+  "menu.top.current": "Tämä kausi",
+  "menu.top.alltime": "Kaikkien aikojen",
+  "menu.top.previous": "Aiemmat kaudet",
+  "menu.top.playtime": "Peliaika",
+
+  "menu.toptime.title": "Eniten peliaikaa",
+  "menu.toptime.row": "#{0} {1} - {2}",
+
+  "menu.period.title": "Aiemmat kaudet",
+  "menu.period.row": "Kausi alkaen {0}",
+  "menu.period.month": "{0} {1}",
+  "menu.period.initial": "Ennen kausia",
+  "menu.period.last_day": "Viimeinen päivä: {0}",
+  "menu.period.current_month": "Kausi: {0}",
+  "menu.period.empty": "Ei vielä aiempia kausia.",
+
+  // Capitalised: menu.period.month puts the month first on its row.
+  "month.1": "Tammikuu",
+  "month.2": "Helmikuu",
+  "month.3": "Maaliskuu",
+  "month.4": "Huhtikuu",
+  "month.5": "Toukokuu",
+  "month.6": "Kesäkuu",
+  "month.7": "Heinäkuu",
+  "month.8": "Elokuu",
+  "month.9": "Syyskuu",
+  "month.10": "Lokakuu",
+  "month.11": "Marraskuu",
+  "month.12": "Joulukuu",
+
+  "menu.playerstats.title": "{0}",
+  "menu.playerstats.empty": "Tälle pelaajalle ei ole tallennettu tilastoja.",
+
+  // ---- Command help -------------------------------------------------------
+  //
+  // Keyed on the command's key in commands.jsonc (command.{key}.help) — do not rename.
+
+  "command.rank.help": "Avaa Ranks-valikon.",
+  "command.ranks.help": "Näyttää koko rankkitaulukon.",
+  "command.top.help": "Näyttää XP-toplistan.",
+  "command.stats.help": "Näyttää tilastosi.",
+  "command.mytime.help": "Näyttää, kuinka kauan olet pelannut tällä palvelimella.",
+  "command.ttop.help": "Näyttää peliajan toplistan.",
+  "command.resetmyrank.help": "Nollaa omat XP:si ja tilastosi. Vaatii vahvistuksen.",
+  "command.setpoints.help": "Asettaa pelaajan XP:n tarkkaan arvoon.",
+  "command.givepoints.help": "Lisää pelaajalle XP:tä.",
+  "command.removepoints.help": "Vähentää pelaajalta XP:tä.",
+  "command.resetrank.help": "Nollaa pelaajan XP:n ja tilastot.",
+
+  // ---- Event names --------------------------------------------------------
+
+  "event.kill": "Tappo",
+  "event.death": "Kuolema",
+  "event.assist": "Assisti",
+  "event.assist_flash": "Flash-assisti",
+  "event.headshot": "Headshot",
+  "event.suicide": "Itsari",
+  "event.team_kill": "Tiimitappo",
+  "event.team_assist": "Tiimiassisti",
+  "event.noscope": "No-scope",
+  "event.wallbang": "Wallbang",
+  "event.through_smoke": "Smoken läpi",
+  "event.blind_kill": "Tappo flashattuna",
+  "event.long_distance": "Kaukotappo",
+  "event.knife_kill": "Puukotus",
+  "event.taser_kill": "Zeus-tappo",
+  "event.grenade_kill": "Kranutappo",
+  "event.inferno_kill": "Molotappo",
+  "event.impact_kill": "Ympäristötappo",
+  "event.bomb_plant": "Plänttäys",
+  "event.bomb_defuse": "Defusaus",
+  "event.bomb_defuse_others": "Pommi defusattu",
+  "event.bomb_exploded": "Pommi räjähti",
+  "event.bomb_pickup": "Pommin nosto",
+  "event.bomb_drop": "Pommin droppaus",
+  "event.hostage_rescue": "Panttivangin pelastus",
+  "event.hostage_rescue_all": "Kaikki panttivangit pelastettu",
+  "event.hostage_hurt": "Panttivanki loukkaantui",
+  "event.hostage_kill": "Panttivangin tappo",
+  "event.round_win": "Erävoitto",
+  "event.round_lose": "Erätappio",
+  "event.mvp": "MVP",
+  "event.match_win": "Matsivoitto",
+  "event.match_lose": "Matsitappio",
+
+  "event.streak.double": "Tupla",
+  "event.streak.triple": "Tripla",
+  "event.streak.domination": "Dominointi",
+  "event.streak.rampage": "Mylläys",
+  "event.streak.mega": "Megatappo",
+  "event.streak.ownage": "Ownage",
+  "event.streak.ultra": "Ultratappo",
+  "event.streak.killing_spree": "Tappoputki",
+  "event.streak.monster": "Monsteritappo",
+  "event.streak.unstoppable": "Pysäyttämätön",
+  "event.streak.godlike": "GODLIKE"
+}

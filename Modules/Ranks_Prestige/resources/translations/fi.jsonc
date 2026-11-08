@@ -1,0 +1,14 @@
+{
+  // Ranks_Prestige - Finnish (suomi). Must stay key-complete with en.jsonc.
+  "command.prestige.help": "Näyttää prestige-tasosi ja edistymisesi",
+
+  "error.players_only": "Tätä komentoa voi käyttää vain pelissä.",
+  "error.unavailable": "Prestige-tiedot eivät ole vielä saatavilla. Yritä hetken päästä uudelleen.",
+
+  "prestige.disabled": "Prestige on poissa käytöstä tällä palvelimella.",
+  "prestige.level": "Korkein saavutettu taso: {0}",
+  "prestige.next": "Seuraava taso: {0}/{1}",
+  "prestige.max": "Olet saavuttanut korkeimman prestigen.",
+
+  "menu.prestige.title": "Prestige"
+}
