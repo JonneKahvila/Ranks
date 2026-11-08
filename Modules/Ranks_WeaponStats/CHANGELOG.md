@@ -14,6 +14,10 @@ Notable changes to Ranks_WeaponStats, newest first.
 
      See .github/instructions/changelog.instructions.md for the full style. -->
 
+## [1.1.2] - 2026-11-08
+
+- Added Finnish translations.
+
 ## [1.1.1] - 2026-11-07
 
 - **Previous seasons** names a season that ran exactly one calendar month by its month, such

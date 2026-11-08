@@ -17,7 +17,7 @@ namespace Ranks;
 
 [PluginMetadata(
     Id = "Ranks",
-    Version = "1.3.0",
+    Version = "1.3.1",
     Name = "Ranks",
     Author = "Shmitzas",
     Description = "Extensive ranks and playtime data collection plugin.")]

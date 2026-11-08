@@ -16,7 +16,7 @@ namespace Ranks.CustomCombos;
 
 [PluginMetadata(
     Id = "Ranks_CustomCombos",
-    Version = "1.1.1",
+    Version = "1.1.2",
     Name = "Ranks CustomCombos",
     Author = "Shmitzas",
     Description = "Operator-defined kill combinations for the Ranks plugin.")]

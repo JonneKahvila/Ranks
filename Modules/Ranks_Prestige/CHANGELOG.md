@@ -14,6 +14,10 @@ Notable changes to Ranks_Prestige, newest first.
 
      See .github/instructions/changelog.instructions.md for the full style. -->
 
+## [1.1.1] - 2026-11-08
+
+- Added Finnish translations.
+
 ## [1.1.0] - 2026-11-06
 
 Requires Ranks 1.1.0.

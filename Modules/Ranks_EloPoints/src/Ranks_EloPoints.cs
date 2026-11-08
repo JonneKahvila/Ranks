@@ -14,7 +14,7 @@ namespace Ranks.EloPoints;
 
 [PluginMetadata(
     Id = "Ranks_EloPoints",
-    Version = "1.1.0",
+    Version = "1.1.1",
     Name = "Ranks EloPoints",
     Author = "Shmitzas",
     Description = "Faceit-style Elo rating for the Ranks plugin. Replaces core scoring.")]
