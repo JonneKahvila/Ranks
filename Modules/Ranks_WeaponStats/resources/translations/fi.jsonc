@@ -1,0 +1,72 @@
+{
+  // Ranks_WeaponStats - Finnish (suomi).
+  //
+  // Must stay KEY-COMPLETE with en.jsonc: a missing key renders the literal marker {lang}.{key}
+  // to the player rather than falling back to English.
+
+  "error.players_only": "[red]Vain pelaajat voivat käyttää tätä komentoa.",
+  "error.unavailable": "[red]Asetilastot eivät ole juuri nyt saatavilla.",
+
+  // ---- Menus --------------------------------------------------------------
+  //
+  // Rows are one centred line and clip at roughly 42 characters.
+
+  "menu.error": "Nämä tilastot eivät ole juuri nyt saatavilla.",
+
+  "menu.weapons.title": "Asetilastot",
+  "menu.weapons.empty": "Sinulla ei ole vielä asetilastoja.",
+  "menu.weapons.hint": "Valitse nähdäksesi aseen osumakohdat",
+  "menu.weapons.row": "{0} | {1} tappoa, {2}% HS, {3}% tarkkuus",
+
+  "menu.hitgroups.title": "Osumatilastot",
+  "menu.hitgroups.empty": "Et ole vielä osunut kehenkään.",
+  "menu.hitgroups.row": "{0}: {1} osumaa ({2}%), {3} dmg",
+
+  "menu.weaponhits.title": "{0} - Osumatilastot",
+
+  // ---- Seasons ------------------------------------------------------------
+
+  "menu.period.current": "Tämä kausi",
+  "menu.period.alltime": "Kaikkien aikojen",
+  "menu.period.previous": "Aiemmat kaudet",
+
+  "menu.period.title": "Aiemmat kaudet",
+  "menu.period.row": "Kausi alkaen {0}",
+  "menu.period.month": "{0} {1}",
+  "menu.period.initial": "Ennen kausia",
+  "menu.period.empty": "Ei vielä aiempia kausia.",
+
+  "month.1": "Tammikuu",
+  "month.2": "Helmikuu",
+  "month.3": "Maaliskuu",
+  "month.4": "Huhtikuu",
+  "month.5": "Toukokuu",
+  "month.6": "Kesäkuu",
+  "month.7": "Heinäkuu",
+  "month.8": "Elokuu",
+  "month.9": "Syyskuu",
+  "month.10": "Lokakuu",
+  "month.11": "Marraskuu",
+  "month.12": "Joulukuu",
+
+  "menu.weapons.title_period": "Asetilastot - {0}",
+  "menu.weapons.empty_period": "Ei asetilastoja tällä kaudella.",
+  "menu.hitgroups.title_period": "Osumatilastot - {0}",
+  "menu.hitgroups.empty_period": "Ei osumia tällä kaudella.",
+  "menu.weaponhits.title_period": "{0} - {1}",
+
+  "hitgroup.generic": "Yleinen",
+  "hitgroup.head": "Pää",
+  "hitgroup.chest": "Rintakehä",
+  "hitgroup.stomach": "Vatsa",
+  "hitgroup.left_arm": "Vasen käsi",
+  "hitgroup.right_arm": "Oikea käsi",
+  "hitgroup.left_leg": "Vasen jalka",
+  "hitgroup.right_leg": "Oikea jalka",
+  "hitgroup.neck": "Kaula",
+  "hitgroup.gear": "Varusteet",
+  "hitgroup.special": "Erityinen",
+  "hitgroup.unknown": "Osuma-alue {0}",
+
+  "command.weaponstats.help": "Näyttää asekohtaiset tappomäärät, tarkkuuden ja headshot-prosentin."
+}

@@ -1,0 +1,53 @@
+{
+  // Ranks_CustomCombos - Finnish (suomi).
+  //
+  // Must stay KEY-COMPLETE with en.jsonc: a missing key renders the literal marker {lang}.{key}
+  // to the player rather than falling back to English.
+  //
+  // Keys named combo.<key> are YOURS to add — one per combo you configure, in every language file.
+
+  "command.combos.help": "Näyttää tekemäsi kombot.",
+
+  // ---- Menu ---------------------------------------------------------------
+
+  "menu.combos.title": "Kombot",
+  "menu.combos.empty": "Et ole vielä tehnyt yhtään komboa.",
+  "menu.combos.row": "{0}: {1}",
+  "menu.combos.error": "Kombotilastot eivät ole juuri nyt saatavilla.",
+
+  // ---- Seasons ------------------------------------------------------------
+
+  "menu.combos.title_in": "Kombot - {0}",
+  "menu.combos.current": "Tämä kausi",
+  "menu.combos.alltime": "Kaikkien aikojen",
+  "menu.combos.previous": "Aiemmat kaudet",
+  "menu.combos.season": "Kausi alkaen {0}",
+  "menu.combos.month": "{0} {1}",
+  "menu.combos.initial": "Ennen kausia",
+  "menu.combos.empty_current": "Ei vielä komboja tällä kaudella.",
+  "menu.combos.empty_season": "Ei komboja sillä kaudella.",
+  "menu.combos.empty_initial": "Aiemmat kombot: ks. Kaikkien aikojen",
+  "menu.combos.seasons_empty": "Ei vielä aiempia kausia.",
+
+  "month.1": "Tammikuu",
+  "month.2": "Helmikuu",
+  "month.3": "Maaliskuu",
+  "month.4": "Huhtikuu",
+  "month.5": "Toukokuu",
+  "month.6": "Kesäkuu",
+  "month.7": "Heinäkuu",
+  "month.8": "Elokuu",
+  "month.9": "Syyskuu",
+  "month.10": "Lokakuu",
+  "month.11": "Marraskuu",
+  "month.12": "Joulukuu",
+
+  // Matching the combos in resources/examples/combos.jsonc.
+  "combo.noscope_hs": "{lime}No-scope headshot",
+  "combo.wallbang_hs": "{lime}Wallbang-headshot",
+  "combo.knife_hs": "{lime}Puukko-headshot",
+  "combo.airborne_sniper": "{lime}Sniputus ilmasta",
+  "combo.blind_nade": "{lime}Kranutappo flashattuna",
+  "combo.nade_double": "{lime}Tupla kranulla",
+  "combo.long_noscope": "{lime}Pitkän matkan no-scope"
+}
