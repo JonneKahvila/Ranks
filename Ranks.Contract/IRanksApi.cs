@@ -215,4 +215,23 @@ public interface IRanksApi
 
     /// <summary>A player's figures for one period, or all time. Null when they hold none there.</summary>
     Task<RanksPlayerSnapshot?> LoadSnapshotAsync(ulong steamId, long period);
+
+    // ---- FR-API-14 menu renderer routing ---------------------------------------
+
+    /// <summary>Asks core to draw its own menus with a renderer another plugin registered in <c>Core.Menu</c>.</summary>
+    /// <param name="moduleId">The caller's id, so <see cref="ClearMenuRenderer"/> drops only its own request.</param>
+    /// <param name="rendererId">A renderer id as registered through <c>Core.Menu.Renderers.Register</c>.</param>
+    /// <param name="menuIds">Core menu ids to route, such as <c>ranks.top</c>; null routes every core menu.</param>
+    /// <remarks>
+    /// Core holds two strings and a list of strings, never a module delegate, and asks
+    /// <c>Core.Menu</c> whether the renderer exists each time it builds a menu. A renderer that is
+    /// not registered, including one whose plugin has unloaded, falls back to the menu's default
+    /// renderer instead of failing to open the menu. The server's <c>menus.jsonc</c> still wins
+    /// over this. At most one request is active: a second call replaces the first, whoever made it.
+    /// Idempotent, so it is safe from the handshake.
+    /// </remarks>
+    void SetMenuRenderer(string moduleId, string rendererId, IReadOnlyCollection<string>? menuIds = null);
+
+    /// <summary>Drops the renderer request <paramref name="moduleId"/> made, if it is the active one. Idempotent.</summary>
+    void ClearMenuRenderer(string moduleId);
 }

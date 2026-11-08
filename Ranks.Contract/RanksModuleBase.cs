@@ -118,6 +118,9 @@ public abstract class RanksModuleBase
 
         // Unconditional: an entry left behind is a delegate into an assembly that is about to go.
         Api.UnregisterMenuEntries(ModuleId);
+
+        // Only drops a request this module made, so a module that never set one loses nothing.
+        Api.ClearMenuRenderer(ModuleId);
     }
 
     /// <remarks>Guarded separately from <see cref="Register"/>: a re-register after core came up must not re-run it.</remarks>

@@ -37,6 +37,7 @@ internal sealed class RankMenus
     private readonly ConfigHost<CommandsConfig> _commands;
     private readonly PlayerReset _reset;
     private readonly MenuEntryRegistry _entries;
+    private readonly MenuRendererRouting _routing;
     private readonly RanksApi _api;
     private readonly ILogger _logger;
 
@@ -47,6 +48,7 @@ internal sealed class RankMenus
         ConfigHost<CommandsConfig> commands,
         PlayerReset reset,
         MenuEntryRegistry entries,
+        MenuRendererRouting routing,
         RanksApi api,
         ILogger logger)
     {
@@ -56,6 +58,7 @@ internal sealed class RankMenus
         _commands = commands;
         _reset = reset;
         _entries = entries;
+        _routing = routing;
         _api = api;
         _logger = logger;
     }
@@ -69,7 +72,7 @@ internal sealed class RankMenus
 
         // Ids are namespaced because a menu id doubles as its keybind configuration scope, which
         // keeps the server's generated keybind file readable. Each one names what it shows.
-        var builder = _core.Menu.CreateMenu("ranks.root")
+        var builder = CreateMenu("ranks.root")
             .WithTitle(_core.Localizer["menu.root.title"])
             .AddHeader(new DividerComponent())
             .WithItemsPerPage(8)
@@ -131,6 +134,9 @@ internal sealed class RankMenus
         return false;
     }
 
+    /// <summary>Every core menu starts here, so a renderer requested through FR-API-14 reaches all of them.</summary>
+    private IMenuBuilder CreateMenu(string id) => _core.Menu.CreateMenu(id).WithRendererSource(_routing);
+
     // ---- My rank -------------------------------------------------------------
 
     private IMenu? BuildMyRank(IPlayer player)
@@ -141,7 +147,7 @@ internal sealed class RankMenus
         var toNext = _ladder.PointsToNext(record.Points);
         var progress = (float)_ladder.ProgressInBand(record.Points);
 
-        return _core.Menu.CreateMenu("ranks.myrank")
+        return CreateMenu("ranks.myrank")
             .WithTitle(_core.Localizer["menu.rank.title"])
             .AddHeader(new DividerComponent())
             .WithItemsPerPage(8)
@@ -162,7 +168,7 @@ internal sealed class RankMenus
     {
         var index = _registry.BySlot(player.Slot)?.RankIndex ?? -1;
 
-        var builder = _core.Menu.CreateMenu("ranks.ladder")
+        var builder = CreateMenu("ranks.ladder")
             .WithTitle(_core.Localizer["menu.ladder.title"])
             .AddHeader(new DividerComponent())
             .WithItemsPerPage(8);
@@ -189,7 +195,7 @@ internal sealed class RankMenus
         var steamId = player.SteamID;
         var periods = _api.ArePeriodsEnabled;
 
-        var builder = _core.Menu.CreateMenu("ranks.stats")
+        var builder = CreateMenu("ranks.stats")
             .WithTitle(_core.Localizer["menu.stats.title"])
             .AddHeader(new DividerComponent())
             .WithItemsPerPage(8)
@@ -224,7 +230,7 @@ internal sealed class RankMenus
     {
         if (_api.GetSnapshot(player) is not { } snapshot) return null;
 
-        var builder = _core.Menu.CreateMenu("ranks.stats.main")
+        var builder = CreateMenu("ranks.stats.main")
             .WithTitle(_core.Localizer[_api.ArePeriodsEnabled ? "menu.stats.current" : "menu.stats.main_title"])
             .AddHeader(new DividerComponent())
             .WithItemsPerPage(10);
@@ -270,7 +276,7 @@ internal sealed class RankMenus
         var entries = _entries.For(RanksMenuSections.Leaderboard);
         var periods = _api.ArePeriodsEnabled;
 
-        var builder = _core.Menu.CreateMenu("ranks.top.sections")
+        var builder = CreateMenu("ranks.top.sections")
             .WithTitle(_core.Localizer["menu.top.title"]);
 
         if (periods) AddSeasonLine(builder);
@@ -309,7 +315,7 @@ internal sealed class RankMenus
 
         if (!_api.ArePeriodsEnabled) return BuildPlaytimeList(_api.CurrentPeriod, title);
 
-        var builder = _core.Menu.CreateMenu("ranks.top.playtime.sections").WithTitle(title);
+        var builder = CreateMenu("ranks.top.playtime.sections").WithTitle(title);
 
         AddSeasonLine(builder);
 
@@ -347,7 +353,7 @@ internal sealed class RankMenus
     /// draws its own type name.
     /// </remarks>
     private IMenu BuildBoardList(string id, string statKey, long period, string title, Func<RanksLeaderboardEntry, string> row) =>
-        _core.Menu.CreateMenu(id)
+        CreateMenu(id)
             .WithTitle(title)
             .AddHeader(new DividerComponent())
             .WithItemsPerPage(10)
@@ -406,7 +412,7 @@ internal sealed class RankMenus
     /// <c>IPlayer</c>, so it can only ever render the viewer's own numbers (FR-CMD-04).
     /// </remarks>
     private IMenu BuildSnapshotStats(string id, string title, ulong steamId, long period) =>
-        _core.Menu.CreateMenu(id)
+        CreateMenu(id)
             .WithTitle(title)
             .AddHeader(new DividerComponent())
             .WithItemsPerPage(10)
@@ -435,7 +441,7 @@ internal sealed class RankMenus
 
     /// <summary>Every period but the current one, newest first, each opening <paramref name="build"/> for itself.</summary>
     private IMenu BuildPeriodPicker(Func<long, string, IMenu> build) =>
-        _core.Menu.CreateMenu("ranks.periods")
+        CreateMenu("ranks.periods")
             .WithTitle(_core.Localizer["menu.period.title"])
             .AddHeader(new DividerComponent())
             .WithItemsPerPage(8)
@@ -534,7 +540,7 @@ internal sealed class RankMenus
     {
         if (_registry.BySlot(player.Slot) is not { } record) return null;
 
-        var builder = _core.Menu.CreateMenu("ranks.settings")
+        var builder = CreateMenu("ranks.settings")
             .WithTitle(_core.Localizer["menu.settings.title"])
             .AddHeader(new DividerComponent())
             .WithItemsPerPage(8)
@@ -557,7 +563,7 @@ internal sealed class RankMenus
     }
 
     private IMenu BuildResetConfirm(IPlayer player) =>
-        _core.Menu.CreateMenu("ranks.settings.reset")
+        CreateMenu("ranks.settings.reset")
             .WithTitle(_core.Localizer["menu.settings.reset_title"])
             .AddHeader(new DividerComponent())
             .Add(new TextComponent(_core.Localizer["menu.settings.reset_warning"]))

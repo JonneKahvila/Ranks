@@ -17,7 +17,7 @@ namespace Ranks;
 
 [PluginMetadata(
     Id = "Ranks",
-    Version = "1.3.1",
+    Version = "1.4.0",
     Name = "Ranks",
     Author = "Shmitzas",
     Description = "Extensive ranks and playtime data collection plugin.")]
@@ -54,6 +54,7 @@ public sealed partial class Ranks : BasePlugin
     private RankRevealer _revealer = null!;
     private PlayerReset _reset = null!;
     private MenuEntryRegistry _menuEntries = null!;
+    private MenuRendererRouting _menuRouting = null!;
     private RankMenus _menus = null!;
     private CommandRegistry _commands = null!;
     private RanksApi _api = null!;
@@ -165,14 +166,15 @@ public sealed partial class Ranks : BasePlugin
         _scoring = new ScoringHandlers(Core, _config, _awards, _registry, _detail, _logger);
         _reset = new PlayerReset(_ladder, _sessions, _scoreboard, _events);
         _menuEntries = new MenuEntryRegistry(_logger);
+        _menuRouting = new MenuRendererRouting(Core);
 
         // Before the menus, which read the leaderboard through it. Nothing in the API needs them
         // back, so the order is a one-way dependency rather than a cycle to break.
         _api = new RanksApi(
             _config, _points, _registry, _sessions, _awards, _ladder, _scoreboard,
-            _store, _migrator, _menuEntries, _tables, _database, _events, _logger);
+            _store, _migrator, _menuEntries, _menuRouting, _tables, _database, _events, _logger);
 
-        _menus = new RankMenus(Core, _ladder, _registry, _commandsConfig, _reset, _menuEntries, _api, _logger);
+        _menus = new RankMenus(Core, _ladder, _registry, _commandsConfig, _reset, _menuEntries, _menuRouting, _api, _logger);
 
         _commands = new CommandRegistry(Core, _commandsConfig, _menus, _registry, _reset, _api, _logger);
 

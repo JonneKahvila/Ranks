@@ -145,10 +145,19 @@ Resolution is highest-priority-first, and the server file wins outright:
 | `Plugin` (50) | `WithKeybindSource` / `WithInputMethodSource` / `WithRendererSource` |
 | `CodeDefault` (0) | `WithInputMethod` / `WithRenderer` / the action's `DefaultKey` |
 
-**This repo sets none of them**, deliberately — so nothing here can shadow an
-operator's choice, and "the config is being ignored" is never a Ranks bug. Check
-the file path first, then that the menu id matches, then that the menu uses the
-`Buttons` input method (binds do not apply under `Chat`).
+**This repo sets no binds, input methods or code-default renderers**, deliberately —
+so nothing here can shadow an operator's choice, and "the config is being ignored"
+is never a Ranks bug. Check the file path first, then that the menu id matches,
+then that the menu uses the `Buttons` input method (binds do not apply under
+`Chat`).
+
+The one source core does attach is `MenuRendererRouting`, a `Plugin`-priority
+renderer source on every core menu. It stays silent unless another plugin asked
+for a renderer through `SetMenuRenderer` (FR-API-14) **and** that renderer is
+registered right now, so it never outranks `menus.jsonc` and never names a
+renderer that would make `Build()` throw. Core menus therefore go through
+`RankMenus.CreateMenu(id)`, never `_core.Menu.CreateMenu` directly — a menu built
+around the helper silently ignores the routing.
 
 ### Custom renderers
 
@@ -157,6 +166,11 @@ renderer. A plugin that draws these pages its own way recognises a page by its
 id and takes the figures from the API, so when it needs more than a page
 carries, the answer is a read-only member on the owning plugin's API
 (FR-API-12), **never a renderer-specific node**.
+
+Such a plugin points core's menus at its renderer with `SetMenuRenderer`
+(FR-API-14), not by telling operators to edit `menus.jsonc`: a config naming a
+renderer that is not registered makes `Build()` throw, so `!rank` would break for
+everyone whenever that plugin is missing.
 
 That makes menu ids, and a paged list's row type when it is a contract record
 (`RanksLeaderboardEntry`, a module's `ComboStatRow`), something other plugins

@@ -30,6 +30,7 @@ internal sealed class RanksApi : IRanksApi
     private readonly PlayerStore _store;
     private readonly SchemaMigrator _migrator;
     private readonly MenuEntryRegistry _menuEntries;
+    private readonly MenuRendererRouting _menuRouting;
     private readonly TableNames _tables;
     private readonly DatabaseConnection _database;
     private readonly RanksEventHub _events;
@@ -46,6 +47,7 @@ internal sealed class RanksApi : IRanksApi
         PlayerStore store,
         SchemaMigrator migrator,
         MenuEntryRegistry menuEntries,
+        MenuRendererRouting menuRouting,
         TableNames tables,
         DatabaseConnection database,
         RanksEventHub events,
@@ -61,6 +63,7 @@ internal sealed class RanksApi : IRanksApi
         _store = store;
         _migrator = migrator;
         _menuEntries = menuEntries;
+        _menuRouting = menuRouting;
         _tables = tables;
         _database = database;
         _events = events;
@@ -298,6 +301,13 @@ internal sealed class RanksApi : IRanksApi
     public void RegisterMenuEntry(string moduleId, RanksMenuEntry entry) => _menuEntries.Add(moduleId, entry);
 
     public void UnregisterMenuEntries(string moduleId) => _menuEntries.RemoveAll(moduleId);
+
+    // ---- FR-API-14 ---------------------------------------------------------------
+
+    public void SetMenuRenderer(string moduleId, string rendererId, IReadOnlyCollection<string>? menuIds = null) =>
+        _menuRouting.Set(moduleId, rendererId, menuIds);
+
+    public void ClearMenuRenderer(string moduleId) => _menuRouting.Clear(moduleId);
 
     public void SetDisplayOverride(IPlayer player, RanksDisplayOverride overlay)
     {

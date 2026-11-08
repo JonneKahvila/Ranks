@@ -22,6 +22,13 @@ Notable changes to Ranks, newest first.
 
 ---
 
+## [1.4.0] - 2026-11-08
+
+- Plugins that draw the `!rank` menus their own way, such as a Panorama HUD, can now ask
+  Ranks to use their renderer. No `menus.jsonc` edit is needed, and if that plugin is
+  removed `!rank` falls back to the normal centre menu instead of failing to open.
+- A renderer you set for a `ranks.*` menu in `configs/menus/menus.jsonc` still wins.
+
 ## [1.3.1] - 2026-11-08
 
 - Added Finnish translations to core and all modules

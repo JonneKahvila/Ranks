@@ -2337,6 +2337,41 @@ own. Core is the only clock (FR-DB-10), so these are the whole interface to it.
   `OnPeriodChanged` and `OnPlayerReset`, subscribed by the same idempotent
   `Register()`.
 
+### FR-API-14 — Menu renderer routing
+
+```csharp
+void SetMenuRenderer(string moduleId, string rendererId, IReadOnlyCollection<string>? menuIds = null);
+void ClearMenuRenderer(string moduleId);
+```
+
+How a custom renderer (FR-API-12) gets core's pages drawn with it. The plugin
+registers its renderer with `Core.Menu.Renderers.Register`, then asks core to use
+it — for every core menu, or only the ids in `menuIds`.
+
+**Why not `menus.jsonc`.** The server's menu file can already point any menu id at
+any renderer, but `MenuBuilder.Build()` throws when that renderer is not
+registered. A config naming a plugin's renderer therefore breaks `!rank` for every
+player as soon as that plugin is missing or fails to load. The file also has no
+wildcard, so an operator would list every `ranks.*` id by hand.
+
+- **Core holds strings, never a delegate.** The request is a module id, a renderer
+  id and an optional id list, so the dependency still runs one way (§1, FR-API-08).
+- **It is a renderer source, not a code default.** Core attaches one
+  `IMenuRendererSource` at `MenuRendererPriority.Plugin` to every menu it builds.
+  `menus.jsonc` (`Global`) still wins, so an operator can override any page.
+- **It answers only for a registered renderer.** The source asks
+  `Core.Menu.Renderers.TryGet` on every build, so a renderer that is not
+  registered — including one whose plugin unloaded without clearing, which
+  SwiftlyS2 drops on unload — falls back to the menu's default. A missing renderer
+  plugin costs the custom look, never the menu.
+- **One request at a time.** A second `SetMenuRenderer` replaces the first,
+  whoever made it, the same single-authority rule as the kill arbiter (FR-API-11).
+  `ClearMenuRenderer` drops the active request only when `moduleId` made it, and
+  `RanksModuleBase.Unregister()` calls it unconditionally.
+- **Idempotent**, so a module may call it from the handshake. It changes the next
+  menu built, not one already open.
+- **Additive like every member after 1.0** (FR-API-01).
+
 ---
 
 ## 12. Non-functional requirements
